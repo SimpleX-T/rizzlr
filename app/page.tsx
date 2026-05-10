@@ -11,6 +11,7 @@ export default function Home() {
       >
         <ElevenLabsMinimalVoiceExample />
       </div> */}
+      {/* In order to deploy, I had to edit this file*/}
       <GameContainer />
     </>
   )
