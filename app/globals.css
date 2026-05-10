@@ -1,0 +1,175 @@
+@import "@solana/wallet-adapter-react-ui/styles.css";
+@import "tailwindcss";
+
+@theme {
+  --font-display: var(--font-nova), monospace;
+  --font-body: var(--font-azeret), monospace;
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-bg: oklch(10% 0.015 240);
+  --color-surface: oklch(14% 0.015 240);
+  --color-panel: oklch(17% 0.018 240);
+  --color-border: oklch(25% 0.018 240);
+  --color-text: oklch(97% 0.005 240);
+  --color-muted: oklch(82% 0.014 240);
+  --color-accent: oklch(65% 0.22 28);
+  --color-chain: oklch(82% 0.19 135);
+  /* shadcn/Tailwind semantic tokens used by result UI (`text-primary`, etc.) */
+  --color-primary: oklch(65% 0.22 28);
+  --color-primary-foreground: oklch(97% 0.005 240);
+}
+
+:root {
+  --font-display: var(--font-nova), "Courier New", monospace;
+  --font-body: var(--font-azeret), "Courier New", monospace;
+  --bg: oklch(10% 0.015 240);
+  --bg-2: oklch(12% 0.017 240);
+  --surface: oklch(14% 0.015 240);
+  --surface-strong: oklch(17% 0.018 240);
+  --border: oklch(25% 0.018 240);
+  --border-soft: oklch(20% 0.014 240);
+  --text: oklch(97% 0.005 240);
+  --muted: oklch(82% 0.014 240);
+  --faint: oklch(68% 0.014 240);
+  --accent: oklch(65% 0.22 28);
+  --accent-2: oklch(58% 0.19 18);
+  --chain: oklch(82% 0.19 135);
+  --danger: oklch(57% 0.22 25);
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4rem;
+  --space-4xl: 6rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg);
+  color: var(--text);
+  color-scheme: dark;
+  min-height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 20% -10%, oklch(24% 0.09 25 / 0.24), transparent 34rem),
+    radial-gradient(circle at 85% 10%, oklch(22% 0.09 140 / 0.16), transparent 30rem),
+    linear-gradient(180deg, var(--bg-2), var(--bg));
+  color: var(--text);
+  font-family: var(--font-body), sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+::selection {
+  background: color-mix(in oklch, var(--accent) 36%, transparent);
+}
+
+.app-shell {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.page-frame {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+}
+
+.display {
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+}
+
+.eyebrow {
+  color: var(--faint);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.panel {
+  background:
+    linear-gradient(180deg, oklch(18% 0.02 240 / 0.84), oklch(12% 0.015 240 / 0.94)),
+    var(--surface);
+  border: 1px solid var(--border-soft);
+  box-shadow: 0 28px 80px oklch(5% 0.01 240 / 0.36);
+}
+
+.noise {
+  position: relative;
+}
+
+.noise::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  opacity: 0.09;
+  background-image:
+    linear-gradient(90deg, oklch(100% 0 0 / 0.045) 1px, transparent 1px),
+    linear-gradient(0deg, oklch(100% 0 0 / 0.035) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(180deg, black, transparent 72%);
+}
+
+.wallet-adapter-button {
+  height: 42px !important;
+  border-radius: 0 !important;
+  border: 1px solid var(--border) !important;
+  background: color-mix(in oklch, var(--surface-strong) 84%, transparent) !important;
+  color: var(--text) !important;
+  font-family: var(--font-body), sans-serif !important;
+  font-size: 0.78rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.1em !important;
+  text-transform: uppercase !important;
+}
+
+.wallet-adapter-button-trigger {
+  background: color-mix(in oklch, var(--chain) 16%, var(--surface)) !important;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .enter-up {
+    animation: enter-up 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes enter-up {
+    from {
+      opacity: 0;
+      transform: translateY(22px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}

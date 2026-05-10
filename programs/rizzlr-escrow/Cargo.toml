@@ -1,0 +1,12 @@
+[package]
+name = "rizzlr-escrow"
+version = "0.1.0"
+description = "SOL escrow for rizzlr PvP challenges"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "rizzlr_escrow"
+
+[dependencies]
+anchor-lang = "0.30.1"
