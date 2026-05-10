@@ -17,7 +17,7 @@ pnpm install
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000). Build, lint, and test commands live in **Scripts** near the bottom of this file.
 
 Apply SQL migrations to Supabase (Dashboard → SQL Editor, or CLI):
 
