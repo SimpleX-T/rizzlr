@@ -80,6 +80,32 @@ export function ChallengeShareModal({
           Friends open the Blink to accept, then play the same persona in rizzlr.
         </p>
 
+        {data.escrowDepositWarning ? (
+          <p
+            className="text-xs mb-4 rounded-lg px-3 py-2 border"
+            style={{
+              color: 'var(--text)',
+              fontFamily: 'var(--font-body)',
+              borderColor: 'color-mix(in oklch, var(--accent) 35%, var(--border))',
+              background:
+                'color-mix(in oklch, var(--accent) 8%, var(--surface-strong))',
+            }}
+          >
+            <span className="font-semibold">Escrow deposit did not confirm.</span>{' '}
+            You can still share the links below. To fix SOL wagers: redeploy the
+            escrow program so its binary matches{' '}
+            <code className="text-[10px] opacity-90">declare_id!</code> and your{' '}
+            <code className="text-[10px] opacity-90">
+              NEXT_PUBLIC_SOLANA_ESCROW_PROGRAM_ID
+            </code>
+            , or unset{' '}
+            <code className="text-[10px] opacity-90">
+              NEXT_PUBLIC_ESCROW_WAGER_LAMPORTS
+            </code>{' '}
+            for free challenges. — {data.escrowDepositWarning}
+          </p>
+        ) : null}
+
         <div className="space-y-3 mb-4">
           <div>
             <span
@@ -187,10 +213,26 @@ export function ChallengeShareModal({
           id {data.challengeId}
         </p>
 
+        <a
+          href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(
+            `Think you can beat my rizz? Play on rizzlr — `,
+          )}&url=${encodeURIComponent(data.blinkUrl)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex w-full mt-4 h-11 items-center justify-center text-xs uppercase tracking-[0.15em] rounded-lg"
+          style={{
+            background: 'var(--text)',
+            color: 'var(--bg)',
+            fontFamily: 'var(--font-body)',
+          }}
+        >
+          share blink on X
+        </a>
+
         <button
           type="button"
           onClick={onClose}
-          className="w-full mt-6 h-11 text-xs uppercase tracking-[0.15em]"
+          className="w-full mt-3 h-11 text-xs uppercase tracking-[0.15em]"
           style={{
             border: '1px solid var(--border-soft)',
             color: 'var(--muted)',

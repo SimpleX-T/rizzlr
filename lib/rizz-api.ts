@@ -263,6 +263,11 @@ export type ChallengeCreatedResponse = {
   appUrl: string;
   creatorDepositTransaction?: string;
   error?: string;
+  /**
+   * Client-only: creator deposit tx failed after the challenge row was created.
+   * Links still work; on-chain escrow may need a fixed program deploy or retry.
+   */
+  escrowDepositWarning?: string;
 };
 
 export async function createChallenge(opts: {
@@ -426,6 +431,10 @@ export async function confirmPurchase(opts: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(opts),
+    signal:
+      typeof AbortSignal !== "undefined" && "timeout" in AbortSignal
+        ? AbortSignal.timeout(45_000)
+        : undefined,
   });
   const data = (await res.json().catch(() => ({}))) as {
     ok?: boolean;

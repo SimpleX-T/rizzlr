@@ -2,6 +2,7 @@
 
 import type { UserProfile } from '@/lib/rizz-api'
 import { fetchNonce, saveProfile } from '@/lib/rizz-api'
+import { formatSolanaWalletError } from '@/lib/wallet-error'
 import { motion } from 'framer-motion'
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
@@ -47,7 +48,7 @@ export function ProfileOnboardingModal({
       onComplete(profile)
       setName('')
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save profile')
+      setError(formatSolanaWalletError(e))
     } finally {
       setBusy(false)
     }

@@ -4,12 +4,14 @@ import {
   LAMPORTS_PER_SOL,
   PublicKey,
   SystemProgram,
-  Transaction,
+  TransactionMessage,
+  VersionedTransaction,
 } from '@solana/web3.js'
 import type { Connection } from '@solana/web3.js'
 import type { WalletContextState } from '@solana/wallet-adapter-react'
 
 import { getTreasuryPubkey } from '@/lib/solana/treasury'
+import { formatSolanaWalletError } from '@/lib/wallet-error'
 
 export async function sendLamportsToTreasury(opts: {
   connection: Connection
@@ -28,18 +30,25 @@ export async function sendLamportsToTreasury(opts: {
   })
   const { blockhash, lastValidBlockHeight } =
     await connection.getLatestBlockhash('confirmed')
-  const tx = new Transaction({
-    feePayer: wallet.publicKey,
+  const messageV0 = new TransactionMessage({
+    payerKey: wallet.publicKey,
     recentBlockhash: blockhash,
-  }).add(ix)
-  const sig = await wallet.sendTransaction(tx, connection, {
-    skipPreflight: false,
-  })
-  await connection.confirmTransaction(
-    { signature: sig, blockhash, lastValidBlockHeight },
-    'confirmed',
-  )
-  return sig
+    instructions: [ix],
+  }).compileToV0Message()
+  const vtx = new VersionedTransaction(messageV0)
+  try {
+    const sig = await wallet.sendTransaction(vtx, connection, {
+      skipPreflight: false,
+      maxRetries: 3,
+    })
+    await connection.confirmTransaction(
+      { signature: sig, blockhash, lastValidBlockHeight },
+      'confirmed',
+    )
+    return sig
+  } catch (e) {
+    throw new Error(formatSolanaWalletError(e))
+  }
 }
 
 export function solToLamports(sol: number): bigint {

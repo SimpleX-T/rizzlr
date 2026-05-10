@@ -128,6 +128,29 @@ describe('GameContainer ConvAI wiring', () => {
     })
   })
 
+  it('passes overrides.tts.voiceId when NEXT_PUBLIC_ELEVENLABS_VOICE_<id> is set', async () => {
+    vi.stubEnv('NEXT_PUBLIC_ELEVENLABS_AGENT_ID', 'agent_shared')
+    vi.stubEnv('NEXT_PUBLIC_ELEVENLABS_VOICE_ZARA', 'voice_zara_env')
+    renderGame()
+    await waitForLobbyReady()
+    await act(async () => {
+      useGameStore.getState().selectPersona(FREE_PERSONAS[0])
+    })
+    fireEvent.click(callButton(/call zara/i))
+    await waitFor(() => {
+      expect(convai.lastStartOpts).not.toBeNull()
+    })
+    expect(convai.lastStartOpts).toEqual(
+      expect.objectContaining({
+        agentId: 'agent_shared',
+        overrides: { tts: { voiceId: 'voice_zara_env' } },
+      }),
+    )
+    await act(async () => {
+      await Promise.resolve()
+    })
+  })
+
   it('uses persona elevenLabsAgentId when set', async () => {
     renderGame()
     await waitForLobbyReady()

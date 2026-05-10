@@ -274,8 +274,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     const { session, rizzScore, timeRemaining } = get()
     if (!session) return
 
-    const score =
-      typeof session.rizzScore === 'number' ? session.rizzScore : rizzScore
+    /** Top-level `rizzScore` is what agents / heuristics update; keep epilogue and UI in sync. */
+    const score = Math.max(0, Math.min(100, rizzScore))
     const exitLine = buildResultEpilogue(session.persona, won, score)
     const budget = session.userBudgetSeconds
     const used = Math.max(0, Math.min(budget, budget - timeRemaining))
@@ -285,7 +285,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       session: {
         ...session,
         endTime: Date.now(),
-        rizzScore,
+        rizzScore: score,
         exitLine,
         userSecondsUsed: used,
       },
@@ -310,7 +310,15 @@ export const useGameStore = create<GameState>((set, get) => ({
     })
   },
   
-  updateRizzScore: (score) => set({ rizzScore: Math.max(0, Math.min(100, score)) }),
+  updateRizzScore: (score) => {
+    const clamped = Math.max(0, Math.min(100, score))
+    set((state) => ({
+      rizzScore: clamped,
+      session: state.session
+        ? { ...state.session, rizzScore: clamped }
+        : state.session,
+    }))
+  },
   
   setTimeRemaining: (time) => set({ timeRemaining: time }),
   

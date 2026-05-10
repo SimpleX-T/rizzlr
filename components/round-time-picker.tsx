@@ -8,6 +8,7 @@ import {
 } from '@/lib/game-config'
 import { confirmPurchase } from '@/lib/rizz-api'
 import { sendLamportsToTreasury } from '@/lib/solana/send-treasury-payment'
+import { formatSolanaWalletError } from '@/lib/wallet-error'
 import { cn } from '@/lib/utils'
 import { useConnection } from '@solana/wallet-adapter-react'
 import { useWallet } from '@solana/wallet-adapter-react'
@@ -59,7 +60,7 @@ export function RoundTimePicker({
       }
       onSelectExtended()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Payment failed')
+      setErr(formatSolanaWalletError(e))
     } finally {
       setPaying(false)
     }

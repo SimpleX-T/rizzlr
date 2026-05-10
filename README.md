@@ -35,9 +35,12 @@ Create `.env.local` (or `.env`) — both are gitignored for secrets. Typical var
 |----------|---------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only; never expose to the browser |
-| `NEXT_PUBLIC_ELEVENLABS_AGENT_ID` | Fallback ConvAI public agent id |
+| `NEXT_PUBLIC_ELEVENLABS_AGENT_ID` | **Fallback only** — used when a persona has no dedicated agent. If every persona hits this, they all share one voice (e.g. Zara’s agent). |
+| `NEXT_PUBLIC_ELEVENLABS_AGENT_ZARA`, `_COLE`, `_JADE`, `_MARCUS`, `_ISABELLE`, `_DIEGO`, `_AOIFE`, `_KENJI` | Optional **per-character** ConvAI public agent ids (from ElevenLabs). Set these so each persona uses its own agent (and voice). |
 | `NEXT_PUBLIC_ELEVENLABS_CONNECTION_TYPE` | `websocket` (default) or `webrtc` |
-| `NEXT_PUBLIC_EPILOGUE_VOICE_ID` | Optional ElevenLabs voice for epilogue audio |
+| `NEXT_PUBLIC_ELEVENLABS_VOICE_ZARA`, `_COLE`, `_JADE`, … `_KENJI` | Per-character **ElevenLabs voice ids** for **live** ConvAI when using one shared agent: passed as `overrides.tts.voiceId`. Enable voice override on that agent in the ElevenLabs dashboard. |
+| `NEXT_PUBLIC_ELEVENLABS_VOICE_ID` | Optional **default** live voice id if a persona has no `NEXT_PUBLIC_ELEVENLABS_VOICE_<ID>`. |
+| `NEXT_PUBLIC_EPILOGUE_VOICE_ID` | Fallback for **post-game** `/api/tts` only, if no persona/env voice above is set. |
 | `ELEVENLABS_API_KEY` | Used by `/api/tts` if enabled |
 | `NEXT_PUBLIC_SOLANA_RPC_URL` | Solana HTTP RPC (same cluster as your deployment) |
 | `SOLANA_RPC_URL` | Optional server fallback when `NEXT_PUBLIC_*` is unset |
@@ -64,7 +67,9 @@ Solana Action (“Blink”) URLs use `/api/actions/challenge/[id]`. Browser invi
 
 ## Anchor program (escrow)
 
-The on-chain program lives in `programs/rizzlr-escrow`. After changing Rust sources or `declare_id!`, rebuild and deploy with your usual Solana/Anchor workflow (`anchor build`, `solana program deploy`, etc.), then set `NEXT_PUBLIC_SOLANA_ESCROW_PROGRAM_ID` to the deployed address.
+The on-chain program lives in `programs/rizzlr-escrow`. After changing Rust sources or `declare_id!`, rebuild and deploy with your usual Solana/Anchor workflow (`anchor build`, `anchor deploy` or `solana program deploy`, etc.), then set `NEXT_PUBLIC_SOLANA_ESCROW_PROGRAM_ID` to the deployed address.
+
+If simulation fails with **DeclaredProgramIdMismatch** / **Error Code: 4100**, the bytecode on-chain does not match `declare_id!` in `programs/rizzlr-escrow/src/lib.rs` (stale deploy or wrong program id in env). From `programs/rizzlr-escrow`, run `anchor keys sync` if your keypair and `declare_id!` drifted, then `anchor build` and `anchor deploy` (or `solana program deploy target/deploy/rizzlr_escrow.so --program-id target/deploy/rizzlr_escrow-keypair.json --url devnet`) so the live program matches the repo. Until then, omit `NEXT_PUBLIC_ESCROW_WAGER_LAMPORTS` (or set below `10000`) so challenges stay **free** and skip escrow.
 
 ## Security
 

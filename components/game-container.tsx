@@ -1,68 +1,78 @@
-'use client'
+"use client";
 
-import { useWallet, useConnection } from '@solana/wallet-adapter-react'
-import { useWalletModal } from '@solana/wallet-adapter-react-ui'
+import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import {
   useConversationControls,
   useConversationInput,
   useConversationMode,
   useConversationStatus,
-} from '@elevenlabs/react'
+} from "@elevenlabs/react";
 import {
   ensureMicrophonePermission,
   getPublicAgentSessionOptions,
-} from '@/lib/elevenlabs-convai-session'
-import { estimateRizzScoreFromTranscript } from '@/lib/heuristic-rizz'
-import type { GameSession } from '@/lib/game-store'
-import { ALL_PERSONAS, FREE_PERSONAS, useGameStore } from '@/lib/game-store'
-import { resolveRizzConnectionStatus } from '@/lib/elevenlabs-status'
-import { resolvePersonaAgentId, resolveEpilogueVoiceId } from '@/lib/persona-agent'
-import { ProfileOnboardingModal } from '@/components/profile-onboarding-modal'
-import { Lobby } from '@/components/lobby'
-import { IncomingCall } from '@/components/incoming-call'
-import { ActiveCall } from '@/components/active-call'
-import { WinScreen, LoseScreen } from '@/components/result-screen'
-import { RizzCoach } from '@/components/rizz-coach'
-import { RizzReplay } from '@/components/rizz-replay'
-import { HallOfShame } from '@/components/hall-of-shame'
-import { SessionHistory } from '@/components/session-history'
-import { ChallengeShareModal } from '@/components/challenge-share-modal'
-import type { ChallengeCreatedResponse, UserProfile } from '@/lib/rizz-api'
+} from "@/lib/elevenlabs-convai-session";
+import { estimateRizzScoreFromTranscript } from "@/lib/heuristic-rizz";
+import type { GameSession, Persona } from "@/lib/game-store";
+import { ALL_PERSONAS, FREE_PERSONAS, useGameStore } from "@/lib/game-store";
+import { resolveRizzConnectionStatus } from "@/lib/elevenlabs-status";
+import {
+  resolvePersonaAgentId,
+  resolveEpilogueVoiceId,
+  resolvePersonaLiveVoiceId,
+} from "@/lib/persona-agent";
+import { ProfileOnboardingModal } from "@/components/profile-onboarding-modal";
+import { Lobby } from "@/components/lobby";
+import { IncomingCall } from "@/components/incoming-call";
+import { ActiveCall } from "@/components/active-call";
+import { WinScreen, LoseScreen } from "@/components/result-screen";
+import { RizzCoach } from "@/components/rizz-coach";
+import { RizzReplay } from "@/components/rizz-replay";
+import { HallOfShame } from "@/components/hall-of-shame";
+import { SessionHistory } from "@/components/session-history";
+import { ChallengeShareModal } from "@/components/challenge-share-modal";
+import type { ChallengeCreatedResponse, UserProfile } from "@/lib/rizz-api";
 import {
   createChallenge,
   fetchEntitlements,
   fetchProfile,
   persistGameSession,
   submitChallengeResult,
-} from '@/lib/rizz-api'
-import { captureElementAsPng, shareBlobFilename } from '@/lib/share-card-capture'
-import { AnimatePresence } from 'framer-motion'
-import { useCallback, useEffect, useRef, useState } from 'react'
+} from "@/lib/rizz-api";
+import { formatSolanaWalletError } from "@/lib/wallet-error";
+import {
+  captureElementAsPng,
+  shareBlobFilename,
+} from "@/lib/share-card-capture";
+import { AnimatePresence } from "framer-motion";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-const SESSION_CONNECT_TIMEOUT_MS = 10_000
-const SESSION_END_WAIT_MS = 5_000
+const SESSION_CONNECT_TIMEOUT_MS = 10_000;
+const SESSION_END_WAIT_MS = 5_000;
+/** ConvAI `mode` toggles rapidly during TTS; hold budget pause briefly after it drops so the timer does not stutter. */
+const USER_BUDGET_PAUSE_TRAIL_MS = 900;
 /** Cap wait on win/lose so users are never stuck behind slow TTS. */
-const RESULT_RECAP_MAX_WAIT_MS = 14_000
+const RESULT_RECAP_MAX_WAIT_MS = 14_000;
 /** When no epilogue voice is configured, reveal UI after a short beat. */
-const RESULT_RECAP_NO_VOICE_MS = 900
+const RESULT_RECAP_NO_VOICE_MS = 900;
 
 function waitUntilVoiceNotConnected(
   getStatus: () => string,
-  timeoutMs: number
+  timeoutMs: number,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const start = Date.now()
+    const start = Date.now();
     const id = window.setInterval(() => {
-      const s = getStatus()
-      if (s === 'disconnected' || s === 'error') {
-        window.clearInterval(id)
-        resolve()
+      const s = getStatus();
+      if (s === "disconnected" || s === "error") {
+        window.clearInterval(id);
+        resolve();
       } else if (Date.now() - start > timeoutMs) {
-        window.clearInterval(id)
-        reject(new Error('[Rizz] Timed out waiting for voice disconnect'))
+        window.clearInterval(id);
+        reject(new Error("[Rizz] Timed out waiting for voice disconnect"));
       }
-    }, 50)
-  })
+    }, 50);
+  });
 }
 
 export function GameContainer() {
@@ -76,134 +86,137 @@ export function GameContainer() {
     updateRizzScore,
     endSession,
     resetGame,
-  } = useGameStore()
+  } = useGameStore();
 
   const { publicKey, signMessage, signTransaction, disconnect, connected } =
-    useWallet()
-  const { connection } = useConnection()
-  const { setVisible } = useWalletModal()
+    useWallet();
+  const { connection } = useConnection();
+  const { setVisible } = useWalletModal();
 
-  const [profile, setProfile] = useState<UserProfile | null>(null)
-  const [showProfileOnboarding, setShowProfileOnboarding] = useState(false)
-  const [showSessionHistory, setShowSessionHistory] = useState(false)
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [showProfileOnboarding, setShowProfileOnboarding] = useState(false);
+  const [showSessionHistory, setShowSessionHistory] = useState(false);
   const [previewReplaySession, setPreviewReplaySession] =
-    useState<GameSession | null>(null)
+    useState<GameSession | null>(null);
   const [previewReplayOutcome, setPreviewReplayOutcome] = useState<
-    'win' | 'lose' | null
-  >(null)
-  const persistedEndRef = useRef<number | null>(null)
-  const lastPersistedSessionIdRef = useRef<string | null>(null)
-  const challengeFromUrlRef = useRef<string | null>(null)
-  const challengeBootstrapIdRef = useRef<string | null>(null)
+    "win" | "lose" | null
+  >(null);
+  const persistedEndRef = useRef<number | null>(null);
+  const lastPersistedSessionIdRef = useRef<string | null>(null);
+  const challengeFromUrlRef = useRef<string | null>(null);
+  const challengeBootstrapIdRef = useRef<string | null>(null);
 
-  const [challengeShare, setChallengeShare] = useState<ChallengeCreatedResponse | null>(
-    null,
-  )
-  const [showChallengeShare, setShowChallengeShare] = useState(false)
+  const [challengeShare, setChallengeShare] =
+    useState<ChallengeCreatedResponse | null>(null);
+  const [showChallengeShare, setShowChallengeShare] = useState(false);
 
-  const [showCoach, setShowCoach] = useState(false)
-  const [showReplay, setShowReplay] = useState(false)
-  const [showHallOfShame, setShowHallOfShame] = useState(false)
-  const [hasMounted, setHasMounted] = useState(false)
-  const previewAppliedRef = useRef(false)
+  const [showCoach, setShowCoach] = useState(false);
+  const [showReplay, setShowReplay] = useState(false);
+  const [showHallOfShame, setShowHallOfShame] = useState(false);
+  const [hasMounted, setHasMounted] = useState(false);
+  const previewAppliedRef = useRef(false);
 
-  const [inputMode, setInputMode] = useState<'voice' | 'text'>('voice')
-  const [agentLiveCaption, setAgentLiveCaption] = useState('')
-  const callStartRef = useRef<number | null>(null)
-  const [callDurationSeconds, setCallDurationSeconds] = useState(0)
+  const [inputMode, setInputMode] = useState<"voice" | "text">("voice");
+  const [agentLiveCaption, setAgentLiveCaption] = useState("");
+  const callStartRef = useRef<number | null>(null);
+  const [callDurationSeconds, setCallDurationSeconds] = useState(0);
   const [cardEndedFlash, setCardEndedFlash] = useState<{
-    personaId: string
-    until: number
-  } | null>(null)
-  const [lobbyNowMs, setLobbyNowMs] = useState(() => Date.now())
+    personaId: string;
+    until: number;
+  } | null>(null);
+  const [lobbyNowMs, setLobbyNowMs] = useState(() => Date.now());
 
-  const incomingConnectAttemptRef = useRef(0)
+  const incomingConnectAttemptRef = useRef(0);
   /** Accumulates assistant streaming text before flush to `session.messages`. */
-  const assistantDraftRef = useRef('')
-  const scoreFromAgentRef = useRef(false)
-  const endAnyVoiceRef = useRef<() => Promise<void>>(async () => {})
-  const finalizeAssistantTurnRef = useRef<() => void>(() => {})
-  const [recapReady, setRecapReady] = useState(false)
+  const assistantDraftRef = useRef("");
+  const scoreFromAgentRef = useRef(false);
+  const endAnyVoiceRef = useRef<() => Promise<void>>(async () => {});
+  const finalizeAssistantTurnRef = useRef<() => void>(() => {});
+  const [recapReady, setRecapReady] = useState(false);
 
   useEffect(() => {
-    setHasMounted(true)
-  }, [])
+    setHasMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!publicKey) {
-      setProfile(null)
-      setShowProfileOnboarding(false)
-      return
+      setProfile(null);
+      setShowProfileOnboarding(false);
+      return;
     }
-    let cancelled = false
+    let cancelled = false;
     void (async () => {
-      const p = await fetchProfile(publicKey.toBase58())
-      if (cancelled) return
-      setProfile(p)
-      if (!p) setShowProfileOnboarding(true)
-    })()
+      const p = await fetchProfile(publicKey.toBase58());
+      if (cancelled) return;
+      setProfile(p);
+      if (!p) setShowProfileOnboarding(true);
+    })();
     return () => {
-      cancelled = true
-    }
-  }, [publicKey])
+      cancelled = true;
+    };
+  }, [publicKey]);
 
   useEffect(() => {
-    if (!publicKey) return
-    let cancelled = false
+    if (!publicKey) return;
+    let cancelled = false;
     void (async () => {
-      const ids = await fetchEntitlements(publicKey.toBase58())
-      if (cancelled || !ids.length) return
-      const { unlockPersona } = useGameStore.getState()
+      const ids = await fetchEntitlements(publicKey.toBase58());
+      if (cancelled || !ids.length) return;
+      const { unlockPersona } = useGameStore.getState();
       for (const id of ids) {
-        unlockPersona(id)
+        unlockPersona(id);
       }
-    })()
+    })();
     return () => {
-      cancelled = true
-    }
-  }, [publicKey])
+      cancelled = true;
+    };
+  }, [publicKey]);
 
   useEffect(() => {
-    if (phase !== 'win' && phase !== 'lose') return
-    const s = session
-    if (!s?.endTime || !publicKey) return
-    if (persistedEndRef.current === s.endTime) return
-    persistedEndRef.current = s.endTime
-    const won = phase === 'win'
+    if (phase !== "win" && phase !== "lose") return;
+    const s = session;
+    if (!s?.endTime || !publicKey) return;
+    if (persistedEndRef.current === s.endTime) return;
+    persistedEndRef.current = s.endTime;
+    const won = phase === "win";
     const score =
-      typeof s.rizzScore === 'number'
+      typeof s.rizzScore === "number"
         ? s.rizzScore
-        : useGameStore.getState().rizzScore
+        : useGameStore.getState().rizzScore;
 
-    const challengeIdFromUrl = challengeFromUrlRef.current
+    const challengeIdFromUrl = challengeFromUrlRef.current;
 
     void (async () => {
-      const { ok, sessionId } = await persistGameSession({
-        wallet: publicKey!.toBase58(),
-        personaId: s.persona.id,
-        won,
-        score,
-        exitLine: s.exitLine,
-        messages: s.messages,
-        startedAt: s.startTime,
-        endedAt: s.endTime!,
-        userBudgetSeconds: s.userBudgetSeconds,
-        userSecondsUsed: s.userSecondsUsed,
-        signMessage: signMessage ?? undefined,
-      })
-      if (ok && sessionId) lastPersistedSessionIdRef.current = sessionId
+      try {
+        const { ok, sessionId } = await persistGameSession({
+          wallet: publicKey!.toBase58(),
+          personaId: s.persona.id,
+          won,
+          score,
+          exitLine: s.exitLine,
+          messages: s.messages,
+          startedAt: s.startTime,
+          endedAt: s.endTime!,
+          userBudgetSeconds: s.userBudgetSeconds,
+          userSecondsUsed: s.userSecondsUsed,
+          signMessage: signMessage ?? undefined,
+        });
+        if (ok && sessionId) lastPersistedSessionIdRef.current = sessionId;
+      } catch (err) {
+        console.warn("[session persist]", err);
+      }
 
-      const cid = challengeIdFromUrl
-      if (!cid || !publicKey) return
+      const cid = challengeIdFromUrl;
+      if (!cid || !publicKey) return;
 
       try {
-        const infoRes = await fetch(`/api/challenges/${cid}`)
-        if (!infoRes.ok) return
-        const info = (await infoRes.json()) as { creatorWallet?: string }
+        const infoRes = await fetch(`/api/challenges/${cid}`);
+        if (!infoRes.ok) return;
+        const info = (await infoRes.json()) as { creatorWallet?: string };
         if (info.creatorWallet === publicKey.toBase58()) {
-          challengeFromUrlRef.current = null
-          window.history.replaceState({}, '', window.location.pathname)
-          return
+          challengeFromUrlRef.current = null;
+          window.history.replaceState({}, "", window.location.pathname);
+          return;
         }
 
         await submitChallengeResult({
@@ -211,242 +224,279 @@ export function GameContainer() {
           wallet: publicKey.toBase58(),
           challengerScore: score,
           signMessage: signMessage ?? undefined,
-        })
+        });
       } catch (err) {
-        console.warn('[challenge submit]', err)
+        console.warn("[challenge submit]", err);
       } finally {
-        challengeFromUrlRef.current = null
-        window.history.replaceState({}, '', window.location.pathname)
+        challengeFromUrlRef.current = null;
+        window.history.replaceState({}, "", window.location.pathname);
       }
-    })()
-  }, [phase, session, publicKey, signMessage])
+    })();
+  }, [phase, session, publicKey, signMessage]);
 
   useEffect(() => {
-    if (!hasMounted || phase !== 'lobby') return
-    if (typeof window === 'undefined') return
-    const id = new URLSearchParams(window.location.search).get('challenge')
-    if (!id) return
-    challengeFromUrlRef.current = id
-    if (challengeBootstrapIdRef.current === id) return
-    challengeBootstrapIdRef.current = id
-    let cancelled = false
+    if (!hasMounted || phase !== "lobby") return;
+    if (typeof window === "undefined") return;
+    const id = new URLSearchParams(window.location.search).get("challenge");
+    if (!id) return;
+    challengeFromUrlRef.current = id;
+    if (challengeBootstrapIdRef.current === id) return;
+    challengeBootstrapIdRef.current = id;
+    let cancelled = false;
     void fetch(`/api/challenges/${encodeURIComponent(id)}`)
       .then(async (r) => {
-        if (!r.ok || cancelled) return
-        const d = (await r.json()) as { personaId?: string; error?: string }
-        if (d.error || cancelled || !d.personaId) return
-        const persona = ALL_PERSONAS.find((p) => p.id === d.personaId)
-        if (persona) selectPersona(persona)
+        if (!r.ok || cancelled) return;
+        const d = (await r.json()) as { personaId?: string; error?: string };
+        if (d.error || cancelled || !d.personaId) return;
+        const persona = ALL_PERSONAS.find((p) => p.id === d.personaId);
+        if (persona) selectPersona(persona);
       })
-      .catch(() => {})
+      .catch(() => {});
     return () => {
-      cancelled = true
-    }
-  }, [hasMounted, phase, selectPersona])
+      cancelled = true;
+    };
+  }, [hasMounted, phase, selectPersona]);
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'development' || previewAppliedRef.current) return
-    if (typeof window === 'undefined') return
-    if (!hasMounted) return
-    if (new URLSearchParams(window.location.search).get('preview') !== 'win') return
+    if (process.env.NODE_ENV !== "development" || previewAppliedRef.current)
+      return;
+    if (typeof window === "undefined") return;
+    if (!hasMounted) return;
+    if (new URLSearchParams(window.location.search).get("preview") !== "win")
+      return;
 
-    previewAppliedRef.current = true
-    selectPersona(FREE_PERSONAS[0])
-    startSession()
-    updateRizzScore(88)
-    endSession(true)
-  }, [endSession, hasMounted, selectPersona, startSession, updateRizzScore])
+    previewAppliedRef.current = true;
+    selectPersona(FREE_PERSONAS[0]);
+    startSession();
+    updateRizzScore(88);
+    endSession(true);
+  }, [endSession, hasMounted, selectPersona, startSession, updateRizzScore]);
 
   const {
     startSession: startVoiceSession,
     endSession: endVoiceSession,
     sendUserMessage,
-  } = useConversationControls()
-  const { status: voiceStatus } = useConversationStatus()
-  const { isMuted, setMuted } = useConversationInput()
-  const { mode: convaiMode } = useConversationMode()
+  } = useConversationControls();
+  const { status: voiceStatus } = useConversationStatus();
+  const { isMuted, setMuted } = useConversationInput();
+  const { mode: convaiMode } = useConversationMode();
+
+  /** Stable pause: SDK flickers speaking/listening during audio; also pause while streamed caption is non-empty. */
+  const [pauseUserBudgetForAgent, setPauseUserBudgetForAgent] = useState(false);
+  const userBudgetPauseTrailRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  useEffect(() => {
+    const agentOccupying =
+      convaiMode === "speaking" || agentLiveCaption.trim().length > 0;
+    if (agentOccupying) {
+      if (userBudgetPauseTrailRef.current) {
+        clearTimeout(userBudgetPauseTrailRef.current);
+        userBudgetPauseTrailRef.current = null;
+      }
+      setPauseUserBudgetForAgent(true);
+      return;
+    }
+    userBudgetPauseTrailRef.current = setTimeout(() => {
+      setPauseUserBudgetForAgent(false);
+      userBudgetPauseTrailRef.current = null;
+    }, USER_BUDGET_PAUSE_TRAIL_MS);
+    return () => {
+      if (userBudgetPauseTrailRef.current) {
+        clearTimeout(userBudgetPauseTrailRef.current);
+        userBudgetPauseTrailRef.current = null;
+      }
+    };
+  }, [convaiMode, agentLiveCaption]);
 
   /** SDK may replace `setMuted` between renders; keep a stable ref so effect deps stay fixed-size. */
-  const setMutedRef = useRef(setMuted)
-  setMutedRef.current = setMuted
+  const setMutedRef = useRef(setMuted);
+  setMutedRef.current = setMuted;
 
-  const voiceStatusRef = useRef(voiceStatus)
-  voiceStatusRef.current = voiceStatus
+  const voiceStatusRef = useRef(voiceStatus);
+  voiceStatusRef.current = voiceStatus;
 
   const resolvedAgentId = currentPersona
     ? resolvePersonaAgentId(currentPersona)
-    : null
-  const hasAgentId = Boolean(resolvedAgentId)
+    : null;
+  const hasAgentId = Boolean(resolvedAgentId);
 
   const endAnyVoice = useCallback(async () => {
-    const s = voiceStatusRef.current
-    if (s !== 'connected' && s !== 'connecting') return
-    endVoiceSession()
+    const s = voiceStatusRef.current;
+    if (s !== "connected" && s !== "connecting") return;
+    endVoiceSession();
     try {
       await waitUntilVoiceNotConnected(
         () => voiceStatusRef.current,
-        SESSION_END_WAIT_MS
-      )
+        SESSION_END_WAIT_MS,
+      );
     } catch (err) {
-      console.warn('[Rizz] endSession wait:', err)
+      console.warn("[Rizz] endSession wait:", err);
     }
-  }, [endVoiceSession])
+  }, [endVoiceSession]);
 
-  endAnyVoiceRef.current = endAnyVoice
+  endAnyVoiceRef.current = endAnyVoice;
 
   const finalizeAssistantTurn = useCallback(() => {
-    const t = assistantDraftRef.current.trim()
+    const t = assistantDraftRef.current.trim();
     if (t) {
-      useGameStore.getState().addMessage({ role: 'assistant', content: t })
+      useGameStore.getState().addMessage({ role: "assistant", content: t });
     }
-    assistantDraftRef.current = ''
-    setAgentLiveCaption('')
-  }, [])
+    assistantDraftRef.current = "";
+    setAgentLiveCaption("");
+  }, []);
 
-  finalizeAssistantTurnRef.current = finalizeAssistantTurn
+  finalizeAssistantTurnRef.current = finalizeAssistantTurn;
 
   useEffect(() => {
-    if (session?.startTime) scoreFromAgentRef.current = false
-  }, [session?.startTime])
+    if (session?.startTime) scoreFromAgentRef.current = false;
+  }, [session?.startTime]);
 
   const startConversation = useCallback(
-    async (agentId: string) => {
+    async (persona: Persona) => {
+      const agentId = resolvePersonaAgentId(persona);
       if (!agentId?.trim()) {
-        throw new Error('[Rizz] No agent id for persona')
+        throw new Error("[Rizz] No agent id for persona");
       }
-      await endAnyVoice()
+      const liveVoiceId = resolvePersonaLiveVoiceId(persona);
+      await endAnyVoice();
       try {
-        await ensureMicrophonePermission()
+        await ensureMicrophonePermission();
       } catch {
-        console.warn('[Rizz] Microphone permission denied')
-        throw new Error('[Rizz] Microphone permission denied')
+        console.warn("[Rizz] Microphone permission denied");
+        throw new Error("[Rizz] Microphone permission denied");
       }
-      assistantDraftRef.current = ''
-      setAgentLiveCaption('')
+      assistantDraftRef.current = "";
+      setAgentLiveCaption("");
       try {
         await new Promise<void>((resolve, reject) => {
-          let settled = false
+          let settled = false;
           const timer = window.setTimeout(() => {
-            if (settled) return
-            settled = true
-            reject(new Error('[Rizz] Session start timed out'))
-          }, SESSION_CONNECT_TIMEOUT_MS)
+            if (settled) return;
+            settled = true;
+            reject(new Error("[Rizz] Session start timed out"));
+          }, SESSION_CONNECT_TIMEOUT_MS);
           const finish = () => {
-            if (settled) return
-            settled = true
-            window.clearTimeout(timer)
-          }
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(timer);
+          };
           startVoiceSession({
             ...getPublicAgentSessionOptions(agentId),
+            ...(liveVoiceId
+              ? { overrides: { tts: { voiceId: liveVoiceId } } }
+              : {}),
             clientTools: {
               set_rizz_score: (params: Record<string, unknown>) => {
                 try {
                   const raw =
                     params.score ??
                     params.Score ??
-                    (params as { value?: unknown }).value
-                  const n =
-                    typeof raw === 'number' ? raw : Number(raw)
-                  if (!Number.isFinite(n)) return 'noop'
-                  useGameStore.getState().updateRizzScore(n)
-                  scoreFromAgentRef.current = true
-                  return 'ok'
+                    (params as { value?: unknown }).value;
+                  const n = typeof raw === "number" ? raw : Number(raw);
+                  if (!Number.isFinite(n)) return "noop";
+                  useGameStore.getState().updateRizzScore(n);
+                  scoreFromAgentRef.current = true;
+                  return "ok";
                 } catch {
-                  return 'err'
+                  return "err";
                 }
               },
               end_game: (params: Record<string, unknown>) => {
                 try {
-                  const st = useGameStore.getState()
-                  if (st.phase !== 'active') return 'noop'
-                  const won = Boolean(params.won ?? params.Won)
+                  const st = useGameStore.getState();
+                  if (st.phase !== "active") return "noop";
+                  const won = Boolean(params.won ?? params.Won);
                   void (async () => {
-                    finalizeAssistantTurnRef.current()
-                    await endAnyVoiceRef.current()
-                    useGameStore.getState().endSession(won)
-                  })()
-                  return 'ok'
+                    finalizeAssistantTurnRef.current();
+                    await endAnyVoiceRef.current();
+                    useGameStore.getState().endSession(won);
+                  })();
+                  return "ok";
                 } catch {
-                  return 'err'
+                  return "err";
                 }
               },
             },
             onConnect: () => {
-              finish()
-              resolve()
+              finish();
+              resolve();
             },
             onError: (message) => {
-              finish()
-              reject(new Error(message))
+              finish();
+              reject(new Error(message));
             },
             onMessage: ({ message, role }) => {
-              if (!message?.trim()) return
-              const text = message.trim()
+              if (!message?.trim()) return;
+              const text = message.trim();
               // Voice ASR: ConvAI emits user transcripts here (same callback as agent lines).
-              if (role === 'user') {
-                useGameStore.getState().addMessage({ role: 'user', content: text })
-                return
+              if (role === "user") {
+                useGameStore
+                  .getState()
+                  .addMessage({ role: "user", content: text });
+                return;
               }
-              if (role !== 'agent') return
-              if (assistantDraftRef.current.trim()) return
-              useGameStore.getState().addMessage({ role: 'assistant', content: text })
+              if (role !== "agent") return;
+              if (assistantDraftRef.current.trim()) return;
+              useGameStore
+                .getState()
+                .addMessage({ role: "assistant", content: text });
             },
             onAgentChatResponsePart: (part) => {
-              if (part.type === 'start') {
-                finalizeAssistantTurnRef.current()
-              } else if (part.type === 'delta' && part.text) {
-                assistantDraftRef.current += part.text
-                setAgentLiveCaption(assistantDraftRef.current)
+              if (part.type === "start") {
+                finalizeAssistantTurnRef.current();
+              } else if (part.type === "delta" && part.text) {
+                assistantDraftRef.current += part.text;
+                setAgentLiveCaption(assistantDraftRef.current);
               }
             },
             onInterruption: () => {
-              finalizeAssistantTurnRef.current()
+              finalizeAssistantTurnRef.current();
             },
-          })
-        })
+          });
+        });
       } catch (err) {
-        console.warn('[Rizz] Session start failed:', err)
-        throw err
+        console.warn("[Rizz] Session start failed:", err);
+        throw err;
       }
     },
-    [endAnyVoice, startVoiceSession]
-  )
+    [endAnyVoice, startVoiceSession],
+  );
 
   useEffect(() => {
-    if (phase !== 'incoming' || !currentPersona || !session) return
+    if (phase !== "incoming" || !currentPersona || !session) return;
 
-    const personaSnapshot = currentPersona
-    const attempt = ++incomingConnectAttemptRef.current
-    let cancelled = false
+    const personaSnapshot = currentPersona;
+    const attempt = ++incomingConnectAttemptRef.current;
+    let cancelled = false;
 
     void (async () => {
-      const personaIdSnapshot = personaSnapshot.id
-      const agentId = resolvePersonaAgentId(personaSnapshot)
-      if (!agentId) {
-        resetGame()
-        return
+      const personaIdSnapshot = personaSnapshot.id;
+      if (!resolvePersonaAgentId(personaSnapshot)) {
+        resetGame();
+        return;
       }
       try {
-        await startConversation(agentId)
+        await startConversation(personaSnapshot);
       } catch {
         if (!cancelled && attempt === incomingConnectAttemptRef.current) {
-          await endAnyVoice()
-          resetGame()
+          await endAnyVoice();
+          resetGame();
           setCardEndedFlash({
             personaId: personaIdSnapshot,
             until: Date.now() + 1500,
-          })
+          });
         }
-        return
+        return;
       }
-      if (cancelled || attempt !== incomingConnectAttemptRef.current) return
-      if (useGameStore.getState().phase !== 'incoming') return
-      setPhase('active')
-    })()
+      if (cancelled || attempt !== incomingConnectAttemptRef.current) return;
+      if (useGameStore.getState().phase !== "incoming") return;
+      setPhase("active");
+    })();
 
     return () => {
-      cancelled = true
-    }
+      cancelled = true;
+    };
   }, [
     phase,
     currentPersona?.id,
@@ -455,127 +505,133 @@ export function GameContainer() {
     setPhase,
     resetGame,
     endAnyVoice,
-  ])
+  ]);
 
   useEffect(() => {
-    if (phase !== 'lobby') return
-    const id = window.setInterval(() => setLobbyNowMs(Date.now()), 250)
-    return () => window.clearInterval(id)
-  }, [phase])
+    if (phase !== "lobby") return;
+    const id = window.setInterval(() => setLobbyNowMs(Date.now()), 250);
+    return () => window.clearInterval(id);
+  }, [phase]);
 
   useEffect(() => {
     if (cardEndedFlash && Date.now() >= cardEndedFlash.until) {
-      setCardEndedFlash(null)
+      setCardEndedFlash(null);
     }
-  }, [cardEndedFlash, lobbyNowMs])
+  }, [cardEndedFlash, lobbyNowMs]);
 
   useEffect(() => {
-    if (voiceStatus === 'connected' && phase === 'active') {
+    if (voiceStatus === "connected" && phase === "active") {
       if (callStartRef.current === null) {
-        callStartRef.current = Date.now()
-        setCallDurationSeconds(0)
+        callStartRef.current = Date.now();
+        setCallDurationSeconds(0);
       }
-      setInputMode('voice')
+      setInputMode("voice");
     }
-    if (voiceStatus === 'disconnected' || voiceStatus === 'error') {
-      callStartRef.current = null
-      setCallDurationSeconds(0)
+    if (voiceStatus === "disconnected" || voiceStatus === "error") {
+      callStartRef.current = null;
+      setCallDurationSeconds(0);
     }
-  }, [voiceStatus, phase])
+  }, [voiceStatus, phase]);
 
   useEffect(() => {
-    if (!(voiceStatus === 'connected' && phase === 'active' && callStartRef.current))
-      return
-    const start = callStartRef.current
+    if (
+      !(
+        voiceStatus === "connected" &&
+        phase === "active" &&
+        callStartRef.current
+      )
+    )
+      return;
+    const start = callStartRef.current;
     const id = window.setInterval(() => {
-      setCallDurationSeconds(Math.floor((Date.now() - start) / 1000))
-    }, 1000)
-    return () => window.clearInterval(id)
-  }, [voiceStatus, phase])
+      setCallDurationSeconds(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [voiceStatus, phase]);
 
   useEffect(() => {
     try {
-      if (inputMode === 'text') {
-        setMutedRef.current(true)
-      } else if (voiceStatus === 'connected' && phase === 'active') {
-        setMutedRef.current(false)
+      if (inputMode === "text") {
+        setMutedRef.current(true);
+      } else if (voiceStatus === "connected" && phase === "active") {
+        setMutedRef.current(false);
       }
     } catch {
       /* ConvAI may already have torn down the session while voiceStatus still lags (timer/hang-up race). */
     }
-  }, [inputMode, voiceStatus, phase])
+  }, [inputMode, voiceStatus, phase]);
 
   const sendMessage = useCallback(
     (text: string) => {
-      if (!text.trim()) return
-      const { addMessage } = useGameStore.getState()
-      addMessage({ role: 'user', content: text })
-      if (voiceStatus === 'connected') {
-        sendUserMessage(text)
+      if (!text.trim()) return;
+      const { addMessage } = useGameStore.getState();
+      addMessage({ role: "user", content: text });
+      if (voiceStatus === "connected") {
+        sendUserMessage(text);
       }
     },
-    [voiceStatus, sendUserMessage]
-  )
+    [voiceStatus, sendUserMessage],
+  );
 
   const connectionStatus = resolveRizzConnectionStatus({
     sdkStatus: voiceStatus,
     hasAgentId,
-  })
+  });
 
   const handleDecline = useCallback(async () => {
-    const pid = currentPersona?.id ?? null
-    setInputMode('voice')
-    finalizeAssistantTurn()
-    assistantDraftRef.current = ''
-    setAgentLiveCaption('')
-    await endAnyVoice()
-    resetGame()
+    const pid = currentPersona?.id ?? null;
+    setInputMode("voice");
+    finalizeAssistantTurn();
+    assistantDraftRef.current = "";
+    setAgentLiveCaption("");
+    await endAnyVoice();
+    resetGame();
     if (pid) {
-      setCardEndedFlash({ personaId: pid, until: Date.now() + 1500 })
+      setCardEndedFlash({ personaId: pid, until: Date.now() + 1500 });
     }
-  }, [currentPersona?.id, endAnyVoice, finalizeAssistantTurn, resetGame])
+  }, [currentPersona?.id, endAnyVoice, finalizeAssistantTurn, resetGame]);
 
   const handleHangUp = useCallback(async () => {
-    finalizeAssistantTurn()
+    finalizeAssistantTurn();
     if (!scoreFromAgentRef.current) {
-      const { session: sess, updateRizzScore: upd } = useGameStore.getState()
+      const { session: sess, updateRizzScore: upd } = useGameStore.getState();
       if (sess?.messages?.length) {
-        upd(estimateRizzScoreFromTranscript(sess.messages))
+        upd(estimateRizzScoreFromTranscript(sess.messages));
       }
     }
-    setInputMode('voice')
-    setAgentLiveCaption('')
-    await endAnyVoice()
-    endSession(false)
-  }, [endAnyVoice, endSession, finalizeAssistantTurn])
+    setInputMode("voice");
+    setAgentLiveCaption("");
+    await endAnyVoice();
+    endSession(false);
+  }, [endAnyVoice, endSession, finalizeAssistantTurn]);
 
   const handleTimeUp = useCallback(async () => {
-    finalizeAssistantTurn()
+    finalizeAssistantTurn();
     if (!scoreFromAgentRef.current) {
-      const { session: sess, updateRizzScore: upd } = useGameStore.getState()
+      const { session: sess, updateRizzScore: upd } = useGameStore.getState();
       if (sess?.messages?.length) {
-        upd(estimateRizzScoreFromTranscript(sess.messages))
+        upd(estimateRizzScoreFromTranscript(sess.messages));
       }
     }
-    setInputMode('voice')
-    setAgentLiveCaption('')
-    await endAnyVoice()
-    endSession(false)
-  }, [endAnyVoice, endSession, finalizeAssistantTurn])
+    setInputMode("voice");
+    setAgentLiveCaption("");
+    await endAnyVoice();
+    endSession(false);
+  }, [endAnyVoice, endSession, finalizeAssistantTurn]);
 
   const handleIssueChallenge = useCallback(async () => {
-    if (!publicKey || !profile) return
-    const st = useGameStore.getState()
-    const sess = st.session
-    if (!sess) return
+    if (!publicKey || !profile) return;
+    const st = useGameStore.getState();
+    const sess = st.session;
+    if (!sess) return;
     const score =
-      typeof sess.rizzScore === 'number' ? sess.rizzScore : st.rizzScore
+      typeof sess.rizzScore === "number" ? sess.rizzScore : st.rizzScore;
 
-    const escrowLamportsRaw = process.env.NEXT_PUBLIC_ESCROW_WAGER_LAMPORTS
+    const escrowLamportsRaw = process.env.NEXT_PUBLIC_ESCROW_WAGER_LAMPORTS;
     const useEscrow =
-      typeof escrowLamportsRaw === 'string' &&
+      typeof escrowLamportsRaw === "string" &&
       escrowLamportsRaw.length > 0 &&
-      Number(escrowLamportsRaw) >= 10_000
+      Number(escrowLamportsRaw) >= 10_000;
 
     try {
       const data = await createChallenge({
@@ -585,255 +641,269 @@ export function GameContainer() {
         timeLimitSeconds: sess.userBudgetSeconds,
         sourceGameSessionId: lastPersistedSessionIdRef.current,
         signMessage: signMessage ?? undefined,
-        wagerType: useEscrow ? 'sol_escrow' : 'free',
+        wagerType: useEscrow ? "sol_escrow" : "free",
         wagerLamports: useEscrow ? Number(escrowLamportsRaw) : 0,
-      })
+      });
+
+      let sharePayload: ChallengeCreatedResponse = data;
 
       if (data.creatorDepositTransaction && signTransaction) {
-        const { VersionedTransaction } = await import('@solana/web3.js')
-        const b64 = data.creatorDepositTransaction
-        const bin = atob(b64)
-        const bytes = new Uint8Array(bin.length)
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-        const vtx = VersionedTransaction.deserialize(bytes)
-        const signed = await signTransaction(vtx)
-        const sig = await connection.sendRawTransaction(
-          signed.serialize(),
-          { skipPreflight: false },
-        )
-        const latest = await connection.getLatestBlockhash('confirmed')
-        await connection.confirmTransaction({ signature: sig, ...latest }, 'confirmed')
-        await fetch(
-          `/api/challenges/${encodeURIComponent(data.challengeId)}/confirm-escrow`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              signature: sig,
-              wallet: publicKey.toBase58(),
-            }),
-          },
-        )
+        try {
+          const { VersionedTransaction } = await import("@solana/web3.js");
+          const b64 = data.creatorDepositTransaction;
+          const bin = atob(b64);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          const vtx = VersionedTransaction.deserialize(bytes);
+          const signed = await signTransaction(vtx);
+          const sig = await connection.sendRawTransaction(signed.serialize(), {
+            skipPreflight: false,
+          });
+          const latest = await connection.getLatestBlockhash("confirmed");
+          await connection.confirmTransaction(
+            { signature: sig, ...latest },
+            "confirmed",
+          );
+          await fetch(
+            `/api/challenges/${encodeURIComponent(data.challengeId)}/confirm-escrow`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                signature: sig,
+                wallet: publicKey.toBase58(),
+              }),
+            },
+          );
+        } catch (depositErr) {
+          console.warn("[challenge escrow deposit]", depositErr);
+          sharePayload = {
+            ...data,
+            escrowDepositWarning: formatSolanaWalletError(depositErr),
+          };
+        }
       }
 
-      setChallengeShare(data)
-      setShowChallengeShare(true)
+      setChallengeShare(sharePayload);
+      setShowChallengeShare(true);
     } catch (e) {
-      console.warn('[create challenge]', e)
+      console.warn("[create challenge]", e);
     }
-  }, [publicKey, profile, signMessage, signTransaction, connection])
+  }, [publicKey, profile, signMessage, signTransaction, connection]);
 
   const handlePlayAgain = useCallback(() => {
-    setShowCoach(false)
-    setShowReplay(false)
-    setPreviewReplaySession(null)
-    setPreviewReplayOutcome(null)
-    setInputMode('voice')
-    finalizeAssistantTurn()
-    assistantDraftRef.current = ''
-    setAgentLiveCaption('')
-    void endAnyVoice()
-    resetGame()
-  }, [endAnyVoice, finalizeAssistantTurn, resetGame])
+    setShowCoach(false);
+    setShowReplay(false);
+    setPreviewReplaySession(null);
+    setPreviewReplayOutcome(null);
+    setInputMode("voice");
+    finalizeAssistantTurn();
+    assistantDraftRef.current = "";
+    setAgentLiveCaption("");
+    void endAnyVoice();
+    resetGame();
+  }, [endAnyVoice, finalizeAssistantTurn, resetGame]);
 
   const handleShare = useCallback(
-    async (intent: 'default' | 'replay' = 'default') => {
-      const st = useGameStore.getState()
-      const preview = previewReplaySession
-      const previewOutcome = previewReplayOutcome
-      const sess = preview ?? st.session
-      const ph = st.phase
+    async (intent: "default" | "replay" = "default") => {
+      const st = useGameStore.getState();
+      const preview = previewReplaySession;
+      const previewOutcome = previewReplayOutcome;
+      const sess = preview ?? st.session;
+      const ph = st.phase;
       const win =
         preview && previewOutcome != null
-          ? previewOutcome === 'win'
-          : ph === 'win'
-      const name = sess?.persona.name ?? 'them'
+          ? previewOutcome === "win"
+          : ph === "win";
+      const name = sess?.persona.name ?? "them";
       const score =
-        typeof sess?.rizzScore === 'number'
-          ? sess.rizzScore
-          : st.rizzScore
+        typeof sess?.rizzScore === "number" ? sess.rizzScore : st.rizzScore;
       const base =
-        typeof window !== 'undefined'
+        typeof window !== "undefined"
           ? window.location.origin + window.location.pathname
-          : ''
+          : "";
       const qs = new URLSearchParams({
-        outcome: win ? 'win' : 'loss',
+        outcome: win ? "win" : "loss",
         score: String(score),
-        persona: sess?.persona.id ?? '',
-      })
-      const url = base ? `${base}?${qs.toString()}` : ''
+        persona: sess?.persona.id ?? "",
+      });
+      const url = base ? `${base}?${qs.toString()}` : "";
 
-      let shareText: string
-      if (intent === 'replay') {
+      let shareText: string;
+      if (intent === "replay") {
         shareText = win
           ? `Rewatched my RIZZLER replay vs ${name} (${score}%). Still smooth.`
-          : `Rewatched my RIZZLER replay vs ${name} (${score}%). Still recovering.`
+          : `Rewatched my RIZZLER replay vs ${name} (${score}%). Still recovering.`;
       } else if (win) {
-        shareText = `Secured the bag vs ${name} on RIZZLER (${score}%). Your turn.`
+        shareText = `Secured the bag vs ${name} on RIZZLER (${score}%). Your turn.`;
       } else {
-        shareText = `Got cooked by ${name} on RIZZLER (${score}%). Can you do better?`
+        shareText = `Got cooked by ${name} on RIZZLER (${score}%). Can you do better?`;
       }
 
       const xIntent = () => {
-        const u = new URL('https://x.com/intent/tweet')
-        u.searchParams.set('text', shareText)
-        if (url) u.searchParams.set('url', url)
-        window.open(u.toString(), '_blank', 'noopener,noreferrer')
-      }
+        const u = new URL("https://x.com/intent/tweet");
+        u.searchParams.set("text", shareText);
+        if (url) u.searchParams.set("url", url);
+        window.open(u.toString(), "_blank", "noopener,noreferrer");
+      };
 
-      let selector: string | null = null
-      let fileKind: 'win' | 'loss' | 'replay' = win ? 'win' : 'loss'
-      if (intent === 'replay') {
-        selector = '[data-export-share-card="replay"]'
-        fileKind = 'replay'
+      let selector: string | null = null;
+      let fileKind: "win" | "loss" | "replay" = win ? "win" : "loss";
+      if (intent === "replay") {
+        selector = '[data-export-share-card="replay"]';
+        fileKind = "replay";
       } else if (win) {
-        selector = '[data-export-share-card="result-win"]'
+        selector = '[data-export-share-card="result-win"]';
       } else {
-        selector = '[data-export-share-card="result-lose"]'
+        selector = '[data-export-share-card="result-lose"]';
       }
 
-      let blob: Blob | null = null
-      if (typeof document !== 'undefined' && selector) {
-        const el = document.querySelector(selector) as HTMLElement | null
+      let blob: Blob | null = null;
+      if (typeof document !== "undefined" && selector) {
+        const el = document.querySelector(selector) as HTMLElement | null;
         if (el) {
-          blob = await captureElementAsPng(el)
+          blob = await captureElementAsPng(el);
         }
       }
 
       const pngFile =
         blob &&
-        new File([blob], shareBlobFilename(fileKind), { type: 'image/png' })
+        new File([blob], shareBlobFilename(fileKind), { type: "image/png" });
 
-      if (pngFile && navigator.share && navigator.canShare?.({ files: [pngFile] })) {
+      if (
+        pngFile &&
+        navigator.share &&
+        navigator.canShare?.({ files: [pngFile] })
+      ) {
         try {
           await navigator.share({
             files: [pngFile],
-            title: 'rizzlr',
-            text: `${shareText}${url ? `\n${url}` : ''}`,
-          })
-          return
+            title: "rizzlr",
+            text: `${shareText}${url ? `\n${url}` : ""}`,
+          });
+          return;
         } catch {
           /* fall through */
         }
       }
 
       if (blob) {
-        const a = document.createElement('a')
-        a.href = URL.createObjectURL(blob)
-        a.download = shareBlobFilename(fileKind)
-        a.click()
-        URL.revokeObjectURL(a.href)
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = shareBlobFilename(fileKind);
+        a.click();
+        URL.revokeObjectURL(a.href);
       }
 
-      xIntent()
+      xIntent();
     },
     [previewReplayOutcome, previewReplaySession],
-  )
+  );
 
   useEffect(() => {
-    if (phase === 'active' || phase === 'incoming') {
-      setRecapReady(false)
+    if (phase === "active" || phase === "incoming") {
+      setRecapReady(false);
     }
-  }, [phase])
+  }, [phase]);
 
   /** Single epilogue string lives on session.exitLine; play TTS then reveal UI (or timeout). */
   useEffect(() => {
-    if (phase !== 'win' && phase !== 'lose') return
+    if (phase !== "win" && phase !== "lose") return;
 
-    const persona = session?.persona
-    const text = session?.exitLine?.trim()
+    const persona = session?.persona;
+    const text = session?.exitLine?.trim();
     if (!session?.endTime || !persona || !text) {
-      setRecapReady(true)
-      return
+      setRecapReady(true);
+      return;
     }
 
-    setRecapReady(false)
-    let cancelled = false
-    let revealed = false
-    let maxTimer: number | undefined
+    setRecapReady(false);
+    let cancelled = false;
+    let revealed = false;
+    let maxTimer: number | undefined;
     const reveal = () => {
-      if (cancelled || revealed) return
-      revealed = true
-      if (maxTimer !== undefined) clearTimeout(maxTimer)
-      setRecapReady(true)
-    }
+      if (cancelled || revealed) return;
+      revealed = true;
+      if (maxTimer !== undefined) clearTimeout(maxTimer);
+      setRecapReady(true);
+    };
 
-    maxTimer = window.setTimeout(reveal, RESULT_RECAP_MAX_WAIT_MS)
-    const voiceId = resolveEpilogueVoiceId(persona)
+    maxTimer = window.setTimeout(reveal, RESULT_RECAP_MAX_WAIT_MS);
+    const voiceId = resolveEpilogueVoiceId(persona);
 
     if (!voiceId) {
       const fallbackTimer = window.setTimeout(() => {
-        clearTimeout(maxTimer)
-        reveal()
-      }, RESULT_RECAP_NO_VOICE_MS)
+        clearTimeout(maxTimer);
+        reveal();
+      }, RESULT_RECAP_NO_VOICE_MS);
       return () => {
-        cancelled = true
-        clearTimeout(maxTimer)
-        clearTimeout(fallbackTimer)
-      }
+        cancelled = true;
+        clearTimeout(maxTimer);
+        clearTimeout(fallbackTimer);
+      };
     }
 
     void (async () => {
       try {
-        const res = await fetch('/api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const res = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text, voiceId }),
-        })
+        });
         if (!res.ok || cancelled) {
-          reveal()
-          return
+          reveal();
+          return;
         }
-        const blob = await res.blob()
-        const url = URL.createObjectURL(blob)
-        const audio = new Audio(url)
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
         audio.onended = () => {
-          clearTimeout(maxTimer)
-          URL.revokeObjectURL(url)
-          reveal()
-        }
+          clearTimeout(maxTimer);
+          URL.revokeObjectURL(url);
+          reveal();
+        };
         await audio.play().catch(() => {
-          reveal()
-        })
+          reveal();
+        });
       } catch {
-        reveal()
+        reveal();
       }
-    })()
+    })();
 
     return () => {
-      cancelled = true
-      clearTimeout(maxTimer)
-    }
-  }, [phase, session?.endTime, session?.exitLine, session?.persona?.id])
+      cancelled = true;
+      clearTimeout(maxTimer);
+    };
+  }, [phase, session?.endTime, session?.exitLine, session?.persona?.id]);
 
   const handleConnectWallet = useCallback(() => {
-    setVisible(true)
-  }, [setVisible])
+    setVisible(true);
+  }, [setVisible]);
 
   const handleDisconnectWallet = useCallback(() => {
-    void disconnect()
-  }, [disconnect])
+    void disconnect();
+  }, [disconnect]);
 
   const handleMicIntent = useCallback(() => {
-    setInputMode('voice')
-    setMutedRef.current(false)
-  }, [])
+    setInputMode("voice");
+    setMutedRef.current(false);
+  }, []);
 
   const handleTextFieldFocus = useCallback(() => {
-    setInputMode('text')
-    setMutedRef.current(true)
-  }, [])
+    setInputMode("text");
+    setMutedRef.current(true);
+  }, []);
 
   if (!hasMounted) {
-    return <div className="h-full" style={{ background: 'var(--bg)' }} />
+    return <div className="h-full" style={{ background: "var(--bg)" }} />;
   }
 
-  const walletConnected = Boolean(connected && publicKey)
+  const walletConnected = Boolean(connected && publicKey);
 
   return (
-    <div className="h-full" style={{ background: 'var(--bg)' }}>
+    <div className="h-full" style={{ background: "var(--bg)" }}>
       <AnimatePresence mode="wait">
-        {phase === 'lobby' && (
+        {phase === "lobby" && (
           <Lobby
             key="lobby"
             gamePhase={phase}
@@ -851,7 +921,7 @@ export function GameContainer() {
           />
         )}
 
-        {phase === 'incoming' && currentPersona && (
+        {phase === "incoming" && currentPersona && (
           <IncomingCall
             key="incoming"
             persona={currentPersona}
@@ -860,13 +930,13 @@ export function GameContainer() {
           />
         )}
 
-        {phase === 'active' && (
+        {phase === "active" && (
           <ActiveCall
             key="active"
             onHangUp={handleHangUp}
             onTimeUp={handleTimeUp}
             onSendMessage={sendMessage}
-            isAISpeaking={convaiMode === 'speaking'}
+            isAISpeaking={pauseUserBudgetForAgent}
             messages={session?.messages ?? []}
             connectionStatus={connectionStatus}
             isMuted={isMuted}
@@ -876,13 +946,13 @@ export function GameContainer() {
             onTextInputFocus={handleTextFieldFocus}
             agentLiveCaption={agentLiveCaption}
             streamingAssistantText={
-              (session?.messages.length ?? 0) > 0 ? agentLiveCaption : ''
+              (session?.messages.length ?? 0) > 0 ? agentLiveCaption : ""
             }
             callDurationSeconds={callDurationSeconds}
           />
         )}
 
-        {phase === 'win' && (
+        {phase === "win" && (
           <WinScreen
             key="win"
             recapReady={recapReady}
@@ -891,18 +961,18 @@ export function GameContainer() {
             onIssueChallenge={handleIssueChallenge}
             showIssueChallenge={Boolean(
               publicKey &&
-                profile &&
-                (signMessage != null || process.env.NODE_ENV === 'development'),
+              profile &&
+              (signMessage != null || process.env.NODE_ENV === "development"),
             )}
             onShowReplay={() => {
-              setPreviewReplaySession(null)
-              setPreviewReplayOutcome(null)
-              setShowReplay(true)
+              setPreviewReplaySession(null);
+              setPreviewReplayOutcome(null);
+              setShowReplay(true);
             }}
           />
         )}
 
-        {phase === 'lose' && (
+        {phase === "lose" && (
           <LoseScreen
             key="lose"
             recapReady={recapReady}
@@ -911,14 +981,14 @@ export function GameContainer() {
             onIssueChallenge={handleIssueChallenge}
             showIssueChallenge={Boolean(
               publicKey &&
-                profile &&
-                (signMessage != null || process.env.NODE_ENV === 'development'),
+              profile &&
+              (signMessage != null || process.env.NODE_ENV === "development"),
             )}
             onShowCoach={() => setShowCoach(true)}
             onShowReplay={() => {
-              setPreviewReplaySession(null)
-              setPreviewReplayOutcome(null)
-              setShowReplay(true)
+              setPreviewReplaySession(null);
+              setPreviewReplayOutcome(null);
+              setShowReplay(true);
             }}
           />
         )}
@@ -934,11 +1004,11 @@ export function GameContainer() {
             key="replay"
             previewSession={previewReplaySession}
             onClose={() => {
-              setPreviewReplaySession(null)
-              setPreviewReplayOutcome(null)
-              setShowReplay(false)
+              setPreviewReplaySession(null);
+              setPreviewReplayOutcome(null);
+              setShowReplay(false);
             }}
-            onShare={() => handleShare('replay')}
+            onShare={() => handleShare("replay")}
           />
         )}
 
@@ -958,9 +1028,9 @@ export function GameContainer() {
             signMessage={signMessage ?? undefined}
             onClose={() => setShowSessionHistory(false)}
             onOpenReplay={(sess, won) => {
-              setPreviewReplaySession(sess)
-              setPreviewReplayOutcome(won ? 'win' : 'lose')
-              setShowReplay(true)
+              setPreviewReplaySession(sess);
+              setPreviewReplayOutcome(won ? "win" : "lose");
+              setShowReplay(true);
             }}
           />
         )}
@@ -972,8 +1042,8 @@ export function GameContainer() {
             walletAddress={publicKey.toBase58()}
             signMessage={signMessage ?? undefined}
             onComplete={(p) => {
-              setProfile(p)
-              setShowProfileOnboarding(false)
+              setProfile(p);
+              setShowProfileOnboarding(false);
             }}
             onDismiss={() => setShowProfileOnboarding(false)}
           />
@@ -983,11 +1053,11 @@ export function GameContainer() {
           open={showChallengeShare}
           data={challengeShare}
           onClose={() => {
-            setShowChallengeShare(false)
-            setChallengeShare(null)
+            setShowChallengeShare(false);
+            setChallengeShare(null);
           }}
         />
       </AnimatePresence>
     </div>
-  )
+  );
 }

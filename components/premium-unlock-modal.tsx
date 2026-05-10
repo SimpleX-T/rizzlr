@@ -4,6 +4,7 @@ import type { Persona } from '@/lib/game-store'
 import { getTreasuryPubkey } from '@/lib/solana/treasury'
 import { sendLamportsToTreasury, solToLamports } from '@/lib/solana/send-treasury-payment'
 import { confirmPurchase } from '@/lib/rizz-api'
+import { formatSolanaWalletError } from '@/lib/wallet-error'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -62,7 +63,7 @@ export function PremiumUnlockModal({
       onUnlocked(persona)
       onClose()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Payment failed')
+      setErr(formatSolanaWalletError(e))
     } finally {
       setBusy(false)
     }
@@ -97,6 +98,12 @@ export function PremiumUnlockModal({
             >
               Price:{' '}
               <span className="font-semibold">{persona.unlockCost} SOL</span>
+            </p>
+            <p
+              className="text-[10px] uppercase tracking-widest break-all"
+              style={{ color: 'var(--faint)', fontFamily: 'var(--font-body)' }}
+            >
+              rpc · {connection.rpcEndpoint}
             </p>
             <p
               className="text-[10px] uppercase tracking-widest break-all"
