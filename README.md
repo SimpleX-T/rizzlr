@@ -1,7 +1,6 @@
 # rizzlr
-# Rizz your way in
 
-Voice-first dating-game riff powered by **ElevenLabs ConvAI**, **Next.js**, **Solana** (wallet auth, optional SOL escrow for PvP challenges), and **Supabase** for profiles and sessions.
+_Voice-first dating-game riff — rizz your way in._ Powered by **ElevenLabs ConvAI**, **Next.js**, **Solana** (wallet auth, optional SOL escrow for PvP challenges), and **Supabase** for profiles and sessions.
 
 ## Requirements
 
