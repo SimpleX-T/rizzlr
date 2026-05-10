@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { buildDicebearAvatarUrl } from '@/lib/dicebear'
+import { shortPublicCacheHeaders } from '@/lib/http-cache'
 import {
   getTrustedWalletDev,
   verifyProfileUpsertRequest,
@@ -36,12 +37,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(null, { status: 404 })
   }
 
-  return NextResponse.json({
-    wallet: data.wallet_address,
-    displayName: data.display_name,
-    avatarUrl: data.avatar_url,
-    createdAt: data.created_at,
-  })
+  return NextResponse.json(
+    {
+      wallet: data.wallet_address,
+      displayName: data.display_name,
+      avatarUrl: data.avatar_url,
+      createdAt: data.created_at,
+    },
+    { headers: shortPublicCacheHeaders(15) },
+  )
 }
 
 export async function POST(request: NextRequest) {

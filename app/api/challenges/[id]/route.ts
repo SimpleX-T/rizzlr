@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { ALL_PERSONAS } from '@/lib/game-store'
+import { shortPublicCacheHeaders } from '@/lib/http-cache'
 import { getSupabaseAdmin, isSupabaseConfigured } from '@/lib/supabase/admin'
 
 export async function GET(
@@ -38,23 +39,26 @@ export async function GET(
   const personaMeta = ALL_PERSONAS.find((p) => p.id === row.persona_id)
   const expired = new Date(row.expires_at).getTime() < Date.now()
 
-  return NextResponse.json({
-    id: row.id,
-    creatorWallet: row.creator_wallet,
-    challengerWallet: row.challenger_wallet,
-    personaId: row.persona_id,
-    personaName: personaMeta?.name ?? row.persona_id,
-    personaAvatar: personaMeta?.avatar,
-    sessionSeed: row.session_seed,
-    timeLimitSeconds: row.time_limit_seconds,
-    creatorScore: row.creator_score,
-    challengerScore: row.challenger_score,
-    wagerType: row.wager_type,
-    wagerLamports: row.wager_lamports,
-    escrowState: row.escrow_state,
-    status: expired && row.status === 'open' ? 'expired' : row.status,
-    expiresAt: row.expires_at,
-    winnerWallet: row.winner_wallet,
-    createdAt: row.created_at,
-  })
+  return NextResponse.json(
+    {
+      id: row.id,
+      creatorWallet: row.creator_wallet,
+      challengerWallet: row.challenger_wallet,
+      personaId: row.persona_id,
+      personaName: personaMeta?.name ?? row.persona_id,
+      personaAvatar: personaMeta?.avatar,
+      sessionSeed: row.session_seed,
+      timeLimitSeconds: row.time_limit_seconds,
+      creatorScore: row.creator_score,
+      challengerScore: row.challenger_score,
+      wagerType: row.wager_type,
+      wagerLamports: row.wager_lamports,
+      escrowState: row.escrow_state,
+      status: expired && row.status === 'open' ? 'expired' : row.status,
+      expiresAt: row.expires_at,
+      winnerWallet: row.winner_wallet,
+      createdAt: row.created_at,
+    },
+    { headers: shortPublicCacheHeaders(6) },
+  )
 }

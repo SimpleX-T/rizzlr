@@ -18,6 +18,8 @@ type SessionSaveBody = {
   messages: Message[]
   startedAt: number
   endedAt: number
+  userBudgetSeconds?: number
+  userSecondsUsed?: number | null
 }
 
 export async function GET(request: NextRequest) {
@@ -46,7 +48,7 @@ export async function GET(request: NextRequest) {
   const { data: rows, error } = await supabase
     .from('game_sessions')
     .select(
-      'id, persona_id, won, score, exit_line, messages_json, started_at, ended_at',
+      'id, persona_id, won, score, exit_line, messages_json, started_at, ended_at, user_budget_seconds, user_seconds_used',
     )
     .eq('user_id', user.id)
     .order('ended_at', { ascending: false })
@@ -67,6 +69,8 @@ export async function GET(request: NextRequest) {
       messages: r.messages_json,
       startedAt: r.started_at,
       endedAt: r.ended_at,
+      userBudgetSeconds: r.user_budget_seconds ?? undefined,
+      userSecondsUsed: r.user_seconds_used ?? undefined,
     })),
   })
 }
@@ -98,6 +102,8 @@ export async function POST(request: NextRequest) {
     messages: parsed.messages,
     startedAt: parsed.startedAt,
     endedAt: parsed.endedAt,
+    userBudgetSeconds: parsed.userBudgetSeconds,
+    userSecondsUsed: parsed.userSecondsUsed ?? null,
   }
 
   const bodySha256Hex = createHash('sha256')
@@ -159,6 +165,14 @@ export async function POST(request: NextRequest) {
       messages_json: messages,
       started_at: new Date(startedAt).toISOString(),
       ended_at: new Date(endedAt).toISOString(),
+      user_budget_seconds:
+        typeof parsed.userBudgetSeconds === 'number'
+          ? Math.round(parsed.userBudgetSeconds)
+          : null,
+      user_seconds_used:
+        typeof parsed.userSecondsUsed === 'number'
+          ? Math.round(parsed.userSecondsUsed)
+          : null,
     })
     .select('id')
     .single()

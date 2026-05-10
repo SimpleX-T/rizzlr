@@ -5,6 +5,7 @@ import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import {
   useConversationControls,
   useConversationInput,
+  useConversationMode,
   useConversationStatus,
 } from '@elevenlabs/react'
 import {
@@ -12,10 +13,8 @@ import {
   getPublicAgentSessionOptions,
 } from '@/lib/elevenlabs-convai-session'
 import { estimateRizzScoreFromTranscript } from '@/lib/heuristic-rizz'
-import { ROUND_SECONDS } from '@/lib/game-config'
 import type { GameSession } from '@/lib/game-store'
 import { ALL_PERSONAS, FREE_PERSONAS, useGameStore } from '@/lib/game-store'
-import { buildResultEpilogue } from '@/lib/result-epilogue'
 import { resolveRizzConnectionStatus } from '@/lib/elevenlabs-status'
 import { resolvePersonaAgentId, resolveEpilogueVoiceId } from '@/lib/persona-agent'
 import { ProfileOnboardingModal } from '@/components/profile-onboarding-modal'
@@ -31,6 +30,7 @@ import { ChallengeShareModal } from '@/components/challenge-share-modal'
 import type { ChallengeCreatedResponse, UserProfile } from '@/lib/rizz-api'
 import {
   createChallenge,
+  fetchEntitlements,
   fetchProfile,
   persistGameSession,
   submitChallengeResult,
@@ -41,6 +41,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 const SESSION_CONNECT_TIMEOUT_MS = 10_000
 const SESSION_END_WAIT_MS = 5_000
+/** Cap wait on win/lose so users are never stuck behind slow TTS. */
+const RESULT_RECAP_MAX_WAIT_MS = 14_000
+/** When no epilogue voice is configured, reveal UI after a short beat. */
+const RESULT_RECAP_NO_VOICE_MS = 900
 
 function waitUntilVoiceNotConnected(
   getStatus: () => string,
@@ -119,7 +123,7 @@ export function GameContainer() {
   const scoreFromAgentRef = useRef(false)
   const endAnyVoiceRef = useRef<() => Promise<void>>(async () => {})
   const finalizeAssistantTurnRef = useRef<() => void>(() => {})
-  const epiloguePlayedEndTimeRef = useRef<number | null>(null)
+  const [recapReady, setRecapReady] = useState(false)
 
   useEffect(() => {
     setHasMounted(true)
@@ -137,6 +141,22 @@ export function GameContainer() {
       if (cancelled) return
       setProfile(p)
       if (!p) setShowProfileOnboarding(true)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [publicKey])
+
+  useEffect(() => {
+    if (!publicKey) return
+    let cancelled = false
+    void (async () => {
+      const ids = await fetchEntitlements(publicKey.toBase58())
+      if (cancelled || !ids.length) return
+      const { unlockPersona } = useGameStore.getState()
+      for (const id of ids) {
+        unlockPersona(id)
+      }
     })()
     return () => {
       cancelled = true
@@ -167,6 +187,8 @@ export function GameContainer() {
         messages: s.messages,
         startedAt: s.startTime,
         endedAt: s.endTime!,
+        userBudgetSeconds: s.userBudgetSeconds,
+        userSecondsUsed: s.userSecondsUsed,
         signMessage: signMessage ?? undefined,
       })
       if (ok && sessionId) lastPersistedSessionIdRef.current = sessionId
@@ -242,6 +264,7 @@ export function GameContainer() {
   } = useConversationControls()
   const { status: voiceStatus } = useConversationStatus()
   const { isMuted, setMuted } = useConversationInput()
+  const { mode: convaiMode } = useConversationMode()
 
   /** SDK may replace `setMuted` between renders; keep a stable ref so effect deps stay fixed-size. */
   const setMutedRef = useRef(setMuted)
@@ -337,14 +360,10 @@ export function GameContainer() {
                   const st = useGameStore.getState()
                   if (st.phase !== 'active') return 'noop'
                   const won = Boolean(params.won ?? params.Won)
-                  const exitLineRaw =
-                    params.exit_line ?? params.exitLine ?? params.exitline
-                  const exitLine =
-                    typeof exitLineRaw === 'string' ? exitLineRaw : undefined
                   void (async () => {
                     finalizeAssistantTurnRef.current()
                     await endAnyVoiceRef.current()
-                    useGameStore.getState().endSession(won, exitLine)
+                    useGameStore.getState().endSession(won)
                   })()
                   return 'ok'
                 } catch {
@@ -527,7 +546,7 @@ export function GameContainer() {
     setInputMode('voice')
     setAgentLiveCaption('')
     await endAnyVoice()
-    endSession(false, "You hung up? Wow, couldn't handle the pressure I guess...")
+    endSession(false)
   }, [endAnyVoice, endSession, finalizeAssistantTurn])
 
   const handleTimeUp = useCallback(async () => {
@@ -541,7 +560,7 @@ export function GameContainer() {
     setInputMode('voice')
     setAgentLiveCaption('')
     await endAnyVoice()
-    endSession(false, "Time's up. The silence did most of the talking.")
+    endSession(false)
   }, [endAnyVoice, endSession, finalizeAssistantTurn])
 
   const handleIssueChallenge = useCallback(async () => {
@@ -563,7 +582,7 @@ export function GameContainer() {
         wallet: publicKey.toBase58(),
         personaId: sess.persona.id,
         creatorScore: score,
-        timeLimitSeconds: ROUND_SECONDS,
+        timeLimitSeconds: sess.userBudgetSeconds,
         sourceGameSessionId: lastPersistedSessionIdRef.current,
         signMessage: signMessage ?? undefined,
         wagerType: useEscrow ? 'sol_escrow' : 'free',
@@ -712,26 +731,48 @@ export function GameContainer() {
   )
 
   useEffect(() => {
-    if (phase !== 'win' && phase !== 'lose') {
-      epiloguePlayedEndTimeRef.current = null
+    if (phase === 'active' || phase === 'incoming') {
+      setRecapReady(false)
+    }
+  }, [phase])
+
+  /** Single epilogue string lives on session.exitLine; play TTS then reveal UI (or timeout). */
+  useEffect(() => {
+    if (phase !== 'win' && phase !== 'lose') return
+
+    const persona = session?.persona
+    const text = session?.exitLine?.trim()
+    if (!session?.endTime || !persona || !text) {
+      setRecapReady(true)
       return
     }
-    const endTime = session?.endTime
-    const persona = session?.persona
-    if (!endTime || !persona) return
-    if (epiloguePlayedEndTimeRef.current === endTime) return
-    const voiceId = resolveEpilogueVoiceId(persona)
-    if (!voiceId) return
 
-    epiloguePlayedEndTimeRef.current = endTime
-    const won = phase === 'win'
-    const scorePercent =
-      typeof session.rizzScore === 'number'
-        ? session.rizzScore
-        : useGameStore.getState().rizzScore
-    const text = buildResultEpilogue(persona, won, scorePercent)
-
+    setRecapReady(false)
     let cancelled = false
+    let revealed = false
+    let maxTimer: number | undefined
+    const reveal = () => {
+      if (cancelled || revealed) return
+      revealed = true
+      if (maxTimer !== undefined) clearTimeout(maxTimer)
+      setRecapReady(true)
+    }
+
+    maxTimer = window.setTimeout(reveal, RESULT_RECAP_MAX_WAIT_MS)
+    const voiceId = resolveEpilogueVoiceId(persona)
+
+    if (!voiceId) {
+      const fallbackTimer = window.setTimeout(() => {
+        clearTimeout(maxTimer)
+        reveal()
+      }, RESULT_RECAP_NO_VOICE_MS)
+      return () => {
+        cancelled = true
+        clearTimeout(maxTimer)
+        clearTimeout(fallbackTimer)
+      }
+    }
+
     void (async () => {
       try {
         const res = await fetch('/api/tts', {
@@ -739,20 +780,31 @@ export function GameContainer() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text, voiceId }),
         })
-        if (!res.ok || cancelled) return
+        if (!res.ok || cancelled) {
+          reveal()
+          return
+        }
         const blob = await res.blob()
         const url = URL.createObjectURL(blob)
         const audio = new Audio(url)
-        await audio.play().finally(() => URL.revokeObjectURL(url))
+        audio.onended = () => {
+          clearTimeout(maxTimer)
+          URL.revokeObjectURL(url)
+          reveal()
+        }
+        await audio.play().catch(() => {
+          reveal()
+        })
       } catch {
-        // optional feature — skip silently
+        reveal()
       }
     })()
 
     return () => {
       cancelled = true
+      clearTimeout(maxTimer)
     }
-  }, [phase, session?.endTime, session?.persona?.id])
+  }, [phase, session?.endTime, session?.exitLine, session?.persona?.id])
 
   const handleConnectWallet = useCallback(() => {
     setVisible(true)
@@ -814,7 +866,7 @@ export function GameContainer() {
             onHangUp={handleHangUp}
             onTimeUp={handleTimeUp}
             onSendMessage={sendMessage}
-            isAISpeaking={false}
+            isAISpeaking={convaiMode === 'speaking'}
             messages={session?.messages ?? []}
             connectionStatus={connectionStatus}
             isMuted={isMuted}
@@ -833,6 +885,7 @@ export function GameContainer() {
         {phase === 'win' && (
           <WinScreen
             key="win"
+            recapReady={recapReady}
             onPlayAgain={handlePlayAgain}
             onShare={handleShare}
             onIssueChallenge={handleIssueChallenge}
@@ -852,6 +905,7 @@ export function GameContainer() {
         {phase === 'lose' && (
           <LoseScreen
             key="lose"
+            recapReady={recapReady}
             onPlayAgain={handlePlayAgain}
             onShare={handleShare}
             onIssueChallenge={handleIssueChallenge}

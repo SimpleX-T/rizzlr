@@ -1,4 +1,3 @@
-//! Devnet placeholder — replace `declare_id!` after deploying your own build.
 //! Anchor / Solana macros use `cfg(feature = "...")` flags Rust 1.79+ check-cfg
 //! does not know until workspace declares them — silence noisy rebuild warnings.
 #![allow(unexpected_cfgs)]
@@ -8,7 +7,7 @@ use anchor_lang::solana_program::program::invoke_signed;
 use anchor_lang::solana_program::system_instruction;
 use anchor_lang::system_program::{self, Transfer};
 
-declare_id!("8VXrjswABWW7y7MNsXfG7EcP39P18E75KxcxmX7yYk1W");
+declare_id!("7Qiy37JApZuYj24dPS5bZd7QkE9QVRJbMQozoY6u2zYJ");
 
 #[program]
 pub mod rizzlr_escrow {

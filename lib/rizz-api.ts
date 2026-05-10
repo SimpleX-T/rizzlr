@@ -98,6 +98,8 @@ export async function persistGameSession(opts: {
   messages: Message[];
   startedAt: number;
   endedAt: number;
+  userBudgetSeconds?: number;
+  userSecondsUsed?: number;
   signMessage?: (msg: Uint8Array) => Promise<Uint8Array>;
 }): Promise<{ ok: boolean; sessionId?: string }> {
   const isDevTrust =
@@ -118,6 +120,8 @@ export async function persistGameSession(opts: {
     messages: opts.messages,
     startedAt: opts.startedAt,
     endedAt: opts.endedAt,
+    userBudgetSeconds: opts.userBudgetSeconds ?? null,
+    userSecondsUsed: opts.userSecondsUsed ?? null,
   };
 
   const hashHex = await sha256Hex(stableStringify(innerPart));
@@ -156,6 +160,8 @@ export type SessionListItem = {
   messages: Message[];
   startedAt: string;
   endedAt: string;
+  userBudgetSeconds?: number | null;
+  userSecondsUsed?: number | null;
 };
 
 export async function fetchSessionHistory(
@@ -397,4 +403,40 @@ export async function submitChallengeResult(opts: {
   }
 
   return res.json();
+}
+
+export async function fetchEntitlements(wallet: string): Promise<string[]> {
+  const res = await fetch(
+    `/api/entitlements?wallet=${encodeURIComponent(wallet)}`,
+  );
+  if (!res.ok) return [];
+  const data = (await res.json().catch(() => ({}))) as {
+    unlockedPersonaIds?: string[];
+  };
+  return data.unlockedPersonaIds ?? [];
+}
+
+export async function confirmPurchase(opts: {
+  wallet: string;
+  signature: string;
+  kind: "unlock_persona" | "time_extension";
+  personaId?: string;
+}): Promise<{ ok: boolean; error?: string; alreadyProcessed?: boolean }> {
+  const res = await fetch("/api/purchases/confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(opts),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    error?: string;
+    alreadyProcessed?: boolean;
+  };
+  if (!res.ok) {
+    return {
+      ok: false,
+      error: typeof data.error === "string" ? data.error : "Confirm failed",
+    };
+  }
+  return { ok: true, alreadyProcessed: data.alreadyProcessed === true };
 }

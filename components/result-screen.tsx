@@ -1,9 +1,8 @@
 'use client'
 
-import { ROUND_SECONDS } from '@/lib/game-config'
 import { useGameStore, getRizzTier } from '@/lib/game-store'
 import { cn } from '@/lib/utils'
-import { Phone, Share2, RotateCcw, MessageCircle, Sparkles, MessageSquareText, ArrowRight, Swords } from 'lucide-react'
+import { Phone, Share2, RotateCcw, MessageCircle, Sparkles, MessageSquareText, ArrowRight, Swords, Loader2 } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 interface ResultScreenProps {
@@ -14,6 +13,8 @@ interface ResultScreenProps {
   /** Create a shareable PvP challenge (Blink + deep link). */
   onIssueChallenge?: () => void
   showIssueChallenge?: boolean
+  /** False until recap audio finishes or times out — keeps UI aligned with TTS. */
+  recapReady?: boolean
 }
 
 export function WinScreen({
@@ -22,6 +23,7 @@ export function WinScreen({
   onShowReplay,
   onIssueChallenge,
   showIssueChallenge,
+  recapReady = true,
 }: ResultScreenProps) {
   const { session, rizzScore } = useGameStore()
   const displayScore =
@@ -30,10 +32,9 @@ export function WinScreen({
 
   if (!session) return null
 
-  const timeUsed = session.endTime 
-    ? Math.floor((session.endTime - session.startTime) / 1000)
-    : 0
-  const timeLeft = Math.max(0, ROUND_SECONDS - timeUsed)
+  const budget = session.userBudgetSeconds
+  const used = session.userSecondsUsed ?? budget
+  const timeLeft = Math.max(0, budget - used)
 
   return (
     <motion.div
@@ -45,8 +46,9 @@ export function WinScreen({
     >
       <ResultBackdrop avatar={session.persona.avatar} tone="win" />
 
-      {/* Contact card */}
-      <motion.div
+      <div className="relative w-full max-w-lg">
+        {/* Contact card */}
+        <motion.div
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 0.2 }}
@@ -122,10 +124,21 @@ export function WinScreen({
             <p className="text-base text-foreground">{tier.emoji} {tier.label}</p>
           </div>
         </div>
+
+        {session.exitLine?.trim() ? (
+          <div className="bg-muted/40 rounded-lg p-3 mt-5 border border-border/50">
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">
+              recap
+            </p>
+            <p className="text-sm text-foreground/90 italic">
+              &quot;{session.exitLine}&quot;
+            </p>
+          </div>
+        ) : null}
       </motion.div>
 
       {/* Actions */}
-      <div className="relative w-full max-w-lg space-y-2">
+      <div className="relative w-full space-y-2 mt-0">
         {onShowReplay && (
           <button
             onClick={onShowReplay}
@@ -188,6 +201,16 @@ export function WinScreen({
           </span>
         </button>
       </div>
+
+        {!recapReady && (
+          <div className="absolute inset-0 z-60 flex flex-col items-center justify-center rounded-2xl bg-background/75 backdrop-blur-[2px]">
+            <Loader2 className="w-8 h-8 animate-spin mb-3 text-muted-foreground" />
+            <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground text-center px-4">
+              Playing recap audio…
+            </p>
+          </div>
+        )}
+      </div>
     </motion.div>
   )
 }
@@ -199,6 +222,7 @@ export function LoseScreen({
   onShowReplay,
   onIssueChallenge,
   showIssueChallenge,
+  recapReady = true,
 }: ResultScreenProps) {
   const { session, rizzScore } = useGameStore()
   const displayScore =
@@ -207,7 +231,8 @@ export function LoseScreen({
 
   if (!session) return null
 
-  const exitLine = session.exitLine || "I've got to go..."
+  const exitLine =
+    session.exitLine?.trim() || "I've got to go..."
 
   return (
     <motion.div
@@ -219,8 +244,9 @@ export function LoseScreen({
     >
       <ResultBackdrop avatar={session.persona.avatar} tone="lose" />
 
-      {/* Result card */}
-      <motion.div
+      <div className="relative w-full max-w-lg">
+        {/* Result card */}
+        <motion.div
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 0.2 }}
@@ -294,7 +320,7 @@ export function LoseScreen({
       </motion.div>
 
       {/* Actions */}
-      <div className="relative w-full max-w-lg space-y-2">
+      <div className="relative w-full space-y-2">
         <div className="flex gap-2">
           {onShowCoach && (
             <button
@@ -367,6 +393,16 @@ export function LoseScreen({
             share the L on X
           </span>
         </button>
+      </div>
+
+        {!recapReady && (
+          <div className="absolute inset-0 z-60 flex flex-col items-center justify-center rounded-2xl bg-background/75 backdrop-blur-[2px]">
+            <Loader2 className="w-8 h-8 animate-spin mb-3 text-muted-foreground" />
+            <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground text-center px-4">
+              Playing recap audio…
+            </p>
+          </div>
+        )}
       </div>
     </motion.div>
   )

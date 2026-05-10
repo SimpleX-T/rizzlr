@@ -1,6 +1,6 @@
 'use client'
 
-import { ROUND_SECONDS } from '@/lib/game-config'
+import { DEFAULT_USER_BUDGET_SECONDS } from '@/lib/game-config'
 import { Message, useGameStore } from '@/lib/game-store'
 import { getRizzConnectionLabel, RizzConnectionStatus } from '@/lib/elevenlabs-status'
 import { cn } from '@/lib/utils'
@@ -43,21 +43,28 @@ export function ActiveCall({
   streamingAssistantText,
   callDurationSeconds,
 }: ActiveCallProps) {
-  const { currentPersona, timeRemaining, setTimeRemaining } = useGameStore()
+  const { currentPersona, timeRemaining, session } = useGameStore()
   const [inputValue, setInputValue] = useState('')
   const onTimeUpRef = useRef(onTimeUp)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const isAISpeakingRef = useRef(isAISpeaking)
+  isAISpeakingRef.current = isAISpeaking
   onTimeUpRef.current = onTimeUp
 
-  // Timer countdown
+  const userBudgetSeconds =
+    session?.userBudgetSeconds ?? DEFAULT_USER_BUDGET_SECONDS
+
+  // User-budget countdown; pauses while the agent is speaking (voice TTS).
   useEffect(() => {
-    if (timeRemaining <= 0) return
-    const timer = setInterval(() => {
-      setTimeRemaining(timeRemaining - 1)
+    const id = window.setInterval(() => {
+      if (isAISpeakingRef.current) return
+      const st = useGameStore.getState()
+      if (st.timeRemaining <= 0) return
+      st.setTimeRemaining(st.timeRemaining - 1)
     }, 1000)
-    return () => clearInterval(timer)
-  }, [timeRemaining, setTimeRemaining])
+    return () => window.clearInterval(id)
+  }, [])
 
   // Fire onTimeUp when timer hits zero
   useEffect(() => {
@@ -92,8 +99,9 @@ export function ActiveCall({
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
-  const isLow = timeRemaining <= 20
-  const progress = timeRemaining / ROUND_SECONDS
+  const isLow = timeRemaining <= Math.max(8, Math.ceil(userBudgetSeconds * 0.22))
+  const progress =
+    userBudgetSeconds > 0 ? timeRemaining / userBudgetSeconds : 0
   const voiceLive = connectionStatus === 'connected'
 
   return (

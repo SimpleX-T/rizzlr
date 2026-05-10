@@ -1,16 +1,21 @@
 'use client'
 
-import { ROUND_SECONDS } from '@/lib/game-config'
+import Link from 'next/link'
+import { DEFAULT_USER_BUDGET_SECONDS, EXTENDED_USER_BUDGET_SECONDS } from '@/lib/game-config'
 import {
   useGameStore,
   FREE_PERSONAS,
   PREMIUM_PERSONAS,
   type GamePhase,
+  type Persona,
 } from '@/lib/game-store'
 import type { UserProfile } from '@/lib/rizz-api'
 import type { ElevenLabsSdkStatus } from '@/lib/elevenlabs-status'
 import { deriveCardCallState } from '@/lib/persona-call-state'
+import { BrandMark } from '@/components/brand-mark'
 import { PersonaCard } from '@/components/persona-card'
+import { PremiumUnlockModal } from '@/components/premium-unlock-modal'
+import { RoundTimePicker } from '@/components/round-time-picker'
 import { ChevronRight, Wallet, History, LogOut, Copy, Check } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useState } from 'react'
@@ -52,10 +57,14 @@ export function Lobby({
     selectPersona,
     unlockedPersonas,
     startSession,
+    selectedUserBudgetSeconds,
+    setSelectedUserBudget,
+    unlockPersona,
   } = useGameStore()
 
   const [showPremium, setShowPremium] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [unlockModalPersona, setUnlockModalPersona] = useState<Persona | null>(null)
 
   const shortAddr = (a: string) =>
     a.length > 12 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a
@@ -95,12 +104,15 @@ export function Lobby({
         }}
       >
         <div className="max-w-lg mx-auto px-6 py-4 flex items-center justify-between">
-          <h1
-            className="text-base tracking-widest uppercase"
-            style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}
-          >
-            rizzlr
-          </h1>
+          <div className="flex items-center gap-3 min-w-0">
+            <BrandMark />
+            <h1
+              className="text-base tracking-widest uppercase truncate"
+              style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}
+            >
+              rizzlr
+            </h1>
+          </div>
           {isWalletConnected ? (
             <div className="flex items-center gap-3 max-w-[min(100%,16rem)]">
               {walletAddress ? (
@@ -260,14 +272,26 @@ export function Lobby({
               TALK YOUR<br />WAY IN
             </h2>
             <p
-              className="text-sm leading-relaxed"
+              className="text-sm leading-relaxed mb-3"
               style={{ color: 'var(--muted)', fontFamily: 'var(--font-body)' }}
             >
-              {ROUND_SECONDS} seconds. one shot. don&apos;t blow it.
+              {DEFAULT_USER_BUDGET_SECONDS}s on your clock (pauses while they
+              talk). one shot. don&apos;t blow it.
             </p>
+            <Link
+              href="/leaderboard"
+              className="text-[11px] uppercase tracking-[0.2em] transition-opacity hover:opacity-70"
+              style={{ color: 'var(--accent)', fontFamily: 'var(--font-body)' }}
+            >
+              daily pot · leaderboard →
+            </Link>
           </div>
 
-          {/* Stats row */}
+          <RoundTimePicker
+            selectedSeconds={selectedUserBudgetSeconds}
+            onSelectStandard={() => setSelectedUserBudget(DEFAULT_USER_BUDGET_SECONDS)}
+            onSelectExtended={() => setSelectedUserBudget(EXTENDED_USER_BUDGET_SECONDS)}
+          />
           <div
             className="flex gap-10 mb-10 pb-6"
             style={{ borderBottom: '1px solid var(--border-soft)' }}
@@ -366,7 +390,11 @@ export function Lobby({
                 textTransform: 'uppercase',
               }}
             >
-              <span>premium · {PREMIUM_PERSONAS.length} locked</span>
+              <span>
+                premium ·{' '}
+                {PREMIUM_PERSONAS.filter((p) => !unlockedPersonas.includes(p.id)).length}{' '}
+                locked
+              </span>
               <ChevronRight
                 className="w-3.5 h-3.5 transition-transform"
                 style={{ transform: showPremium ? 'rotate(90deg)' : 'rotate(0deg)' }}
@@ -398,6 +426,7 @@ export function Lobby({
                     onSelect={() => {
                       if (unlockedPersonas.includes(persona.id)) selectPersona(persona)
                     }}
+                    onLockedPremium={() => setUnlockModalPersona(persona)}
                   />
                 ))}
               </motion.div>
@@ -406,6 +435,16 @@ export function Lobby({
 
         </div>
       </main>
+
+      <PremiumUnlockModal
+        persona={unlockModalPersona}
+        open={unlockModalPersona != null}
+        onClose={() => setUnlockModalPersona(null)}
+        onUnlocked={(p) => {
+          unlockPersona(p.id)
+          selectPersona(p)
+        }}
+      />
 
       {/* ── Footer CTA (fixed height, never scrolls) ── */}
       <div

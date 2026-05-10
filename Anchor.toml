@@ -1,8 +1,8 @@
 [programs.devnet]
-rizzlr_escrow = "8VXrjswABWW7y7MNsXfG7EcP39P18E75KxcxmX7yYk1W"
+rizzlr_escrow = "7Qiy37JApZuYj24dPS5bZd7QkE9QVRJbMQozoY6u2zYJ"
 
 [programs.localnet]
-rizzlr_escrow = "8VXrjswABWW7y7MNsXfG7EcP39P18E75KxcxmX7yYk1W"
+rizzlr_escrow = "7Qiy37JApZuYj24dPS5bZd7QkE9QVRJbMQozoY6u2zYJ"
 
 [provider]
 cluster = "Devnet"

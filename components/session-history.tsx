@@ -2,6 +2,7 @@
 
 import type { GameSession } from '@/lib/game-store'
 import { ALL_PERSONAS, FREE_PERSONAS } from '@/lib/game-store'
+import { DEFAULT_USER_BUDGET_SECONDS } from '@/lib/game-config'
 import type { SessionListItem } from '@/lib/rizz-api'
 import { fetchSessionHistory } from '@/lib/rizz-api'
 import { motion } from 'framer-motion'
@@ -28,6 +29,8 @@ function rowToGameSession(row: SessionListItem): GameSession {
     messages: row.messages,
     rizzScore: row.score,
     exitLine: row.exitLine ?? undefined,
+    userBudgetSeconds: row.userBudgetSeconds ?? DEFAULT_USER_BUDGET_SECONDS,
+    userSecondsUsed: row.userSecondsUsed ?? undefined,
   }
 }
 

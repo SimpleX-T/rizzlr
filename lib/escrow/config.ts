@@ -1,15 +1,16 @@
 import bs58 from 'bs58'
 import { Keypair, PublicKey } from '@solana/web3.js'
 
-/** Must match `declare_id!` in `programs/rizzlr-escrow` until you deploy your own program. */
-export const DEFAULT_ESCROW_PROGRAM_ID =
-  '8VXrjswABWW7y7MNsXfG7EcP39P18E75KxcxmX7yYk1W'
-
 export function getEscrowProgramId(): PublicKey {
   const raw =
-    process.env.NEXT_PUBLIC_SOLANA_ESCROW_PROGRAM_ID ??
-    process.env.SOLANA_ESCROW_PROGRAM_ID
-  return new PublicKey(raw ?? DEFAULT_ESCROW_PROGRAM_ID)
+    process.env.NEXT_PUBLIC_SOLANA_ESCROW_PROGRAM_ID?.trim() ??
+    process.env.SOLANA_ESCROW_PROGRAM_ID?.trim()
+  if (!raw) {
+    throw new Error(
+      'Set NEXT_PUBLIC_SOLANA_ESCROW_PROGRAM_ID (or SOLANA_ESCROW_PROGRAM_ID) to your deployed rizzlr_escrow program id.'
+    )
+  }
+  return new PublicKey(raw)
 }
 
 export function loadEscrowAuthorityKeypair(): Keypair | null {

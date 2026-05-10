@@ -13,10 +13,15 @@ export function buildDicebearAvatarUrl(seed: string, size = 128): string {
 
 /** App favicon: deterministic branding (PNG for broad client support). */
 export function buildDicebearFaviconUrl(): string {
+  return buildDicebearBrandMarkPngUrl('rizzlr', 64)
+}
+
+/** PNG avatar for header brand mark (random seeds supported). */
+export function buildDicebearBrandMarkPngUrl(seed: string, size = 40): string {
   const params = new URLSearchParams({
-    seed: 'rizzlr',
+    seed,
     radius: '50',
-    size: '64',
+    size: String(size),
   })
   return `https://api.dicebear.com/9.x/adventurer-neutral/png?${params.toString()}`
 }

@@ -1,7 +1,11 @@
 import { create } from 'zustand'
 
-import { ROUND_SECONDS } from '@/lib/game-config'
+import {
+  DEFAULT_USER_BUDGET_SECONDS,
+  EXTENDED_USER_BUDGET_SECONDS,
+} from '@/lib/game-config'
 import { PERSONA_PROMPT_BREVITY_SUFFIX } from '@/lib/prompt-rules'
+import { buildResultEpilogue } from '@/lib/result-epilogue'
 
 export type GameMode = 'voice' | 'text'
 export type GamePhase = 'lobby' | 'incoming' | 'active' | 'win' | 'lose'
@@ -44,6 +48,12 @@ export interface GameSession {
   exitLine?: string
   bestLine?: string
   worstLine?: string
+  /** User-timer budget for this run (seconds). */
+  userBudgetSeconds: number
+  /** Seconds of user budget consumed when the session ended (win or lose). */
+  userSecondsUsed?: number
+  /** True if extended budget was selected after a paid time upgrade. */
+  timeExtensionPaid?: boolean
 }
 
 interface GameState {
@@ -59,19 +69,23 @@ interface GameState {
   
   // Unlocked personas
   unlockedPersonas: string[]
-  
+
+  /** Lobby: null uses DEFAULT_USER_BUDGET_SECONDS at session start. */
+  selectedUserBudgetSeconds: number | null
+
   // Actions
   setPhase: (phase: GamePhase) => void
   setMode: (mode: GameMode) => void
   selectPersona: (persona: Persona) => void
   startSession: () => void
-  endSession: (won: boolean, exitLine?: string) => void
+  endSession: (won: boolean) => void
   addMessage: (message: Omit<Message, 'id' | 'timestamp'>) => void
   updateRizzScore: (score: number) => void
   setTimeRemaining: (time: number) => void
   setIsConnected: (connected: boolean) => void
   setIsSpeaking: (speaking: boolean) => void
   unlockPersona: (personaId: string) => void
+  setSelectedUserBudget: (seconds: number | null) => void
   resetGame: () => void
 }
 
@@ -210,11 +224,12 @@ const initialState = {
   mode: 'voice' as GameMode,
   currentPersona: null,
   session: null,
-  timeRemaining: ROUND_SECONDS,
+  timeRemaining: DEFAULT_USER_BUDGET_SECONDS,
   rizzScore: 50,
   isConnected: false,
   isSpeaking: false,
   unlockedPersonas: FREE_PERSONAS.map(p => p.id),
+  selectedUserBudgetSeconds: null,
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -225,11 +240,20 @@ export const useGameStore = create<GameState>((set, get) => ({
   setMode: (mode) => set({ mode }),
   
   selectPersona: (persona) => set({ currentPersona: persona }),
-  
+
   startSession: () => {
-    const { currentPersona, mode } = get()
+    const { currentPersona, mode, selectedUserBudgetSeconds } = get()
     if (!currentPersona) return
-    
+
+    const budget =
+      selectedUserBudgetSeconds != null &&
+      (selectedUserBudgetSeconds === DEFAULT_USER_BUDGET_SECONDS ||
+        selectedUserBudgetSeconds === EXTENDED_USER_BUDGET_SECONDS)
+        ? selectedUserBudgetSeconds
+        : DEFAULT_USER_BUDGET_SECONDS
+
+    const timeExtensionPaid = budget === EXTENDED_USER_BUDGET_SECONDS
+
     set({
       phase: 'incoming',
       session: {
@@ -238,16 +262,24 @@ export const useGameStore = create<GameState>((set, get) => ({
         startTime: Date.now(),
         messages: [],
         rizzScore: 50,
+        userBudgetSeconds: budget,
+        timeExtensionPaid,
       },
-      timeRemaining: ROUND_SECONDS,
+      timeRemaining: budget,
       rizzScore: 50,
     })
   },
-  
-  endSession: (won, exitLine) => {
-    const { session, rizzScore } = get()
+
+  endSession: (won) => {
+    const { session, rizzScore, timeRemaining } = get()
     if (!session) return
-    
+
+    const score =
+      typeof session.rizzScore === 'number' ? session.rizzScore : rizzScore
+    const exitLine = buildResultEpilogue(session.persona, won, score)
+    const budget = session.userBudgetSeconds
+    const used = Math.max(0, Math.min(budget, budget - timeRemaining))
+
     set({
       phase: won ? 'win' : 'lose',
       session: {
@@ -255,6 +287,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         endTime: Date.now(),
         rizzScore,
         exitLine,
+        userSecondsUsed: used,
       },
     })
   },
@@ -291,7 +324,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       set({ unlockedPersonas: [...unlockedPersonas, personaId] })
     }
   },
-  
+
+  setSelectedUserBudget: (seconds) => set({ selectedUserBudgetSeconds: seconds }),
+
   resetGame: () => set(initialState),
 }))
 

@@ -6,6 +6,23 @@ import { GameContainer } from '@/components/game-container'
 import { ElevenLabsProvider } from '@/components/providers/elevenlabs-provider'
 import { FREE_PERSONAS, useGameStore } from '@/lib/game-store'
 
+vi.mock('@solana/wallet-adapter-react', () => ({
+  useWallet: () => ({
+    publicKey: null,
+    signMessage: undefined,
+    signTransaction: undefined,
+    disconnect: vi.fn(),
+    connected: false,
+  }),
+  useConnection: () => ({
+    connection: {},
+  }),
+}))
+
+vi.mock('@solana/wallet-adapter-react-ui', () => ({
+  useWalletModal: () => ({ setVisible: vi.fn() }),
+}))
+
 /** Mutable ConvAI mock so tests can flip `voiceStatus` and re-render. */
 const convai = vi.hoisted(() => ({
   voiceStatus: 'disconnected' as ConversationStatus,
@@ -43,6 +60,11 @@ vi.mock('@elevenlabs/react', () => ({
   useConversationInput: () => ({
     isMuted: false,
     setMuted: convai.setMuted,
+  }),
+  useConversationMode: () => ({
+    mode: 'listening' as const,
+    isSpeaking: false,
+    isListening: true,
   }),
 }))
 

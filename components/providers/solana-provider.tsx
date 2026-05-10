@@ -3,7 +3,7 @@
 import { FC, ReactNode, useMemo } from 'react'
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react'
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui'
-import { useStandardWalletAdapters } from '@solana/wallet-standard-wallet-adapter'
+import { SolflareWalletAdapter } from '@solana/wallet-adapter-wallets'
 import { clusterApiUrl } from '@solana/web3.js'
 
 // Import wallet adapter styles
@@ -13,12 +13,18 @@ interface SolanaProviderProps {
   children: ReactNode
 }
 
-/** Registers Wallet Standard wallets; auto-restore only if NEXT_PUBLIC_WALLET_AUTO_CONNECT=true */
-function WalletStandardBridge({ children }: { children: ReactNode }) {
-  const wallets = useStandardWalletAdapters(useMemo(() => [], []))
+/**
+ * Pass legacy adapters — `WalletProvider` merges Wallet Standard wallets internally.
+ *
+ * **autoConnect** defaults on: `WalletModal` only calls `select()`; the signing session is opened by
+ * WalletProviderBase auto-connect path when this prop is true. If false, choosing a wallet never
+ * calls `adapter.connect()` (looks frozen). Opt out with `NEXT_PUBLIC_WALLET_AUTO_CONNECT=false`.
+ */
+function SolanaWalletShell({ children }: { children: ReactNode }) {
+  const wallets = useMemo(() => [new SolflareWalletAdapter()], [])
   const autoConnect =
     typeof process !== 'undefined' &&
-    process.env.NEXT_PUBLIC_WALLET_AUTO_CONNECT === 'true'
+    process.env.NEXT_PUBLIC_WALLET_AUTO_CONNECT !== 'false'
   return (
     <WalletProvider wallets={wallets} autoConnect={autoConnect}>
       <WalletModalProvider>{children}</WalletModalProvider>
@@ -34,7 +40,7 @@ export const SolanaProvider: FC<SolanaProviderProps> = ({ children }) => {
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <WalletStandardBridge>{children}</WalletStandardBridge>
+      <SolanaWalletShell>{children}</SolanaWalletShell>
     </ConnectionProvider>
   )
 }

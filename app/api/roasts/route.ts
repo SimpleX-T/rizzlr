@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { ALL_PERSONAS } from '@/lib/game-store'
+import { shortPublicCacheHeaders } from '@/lib/http-cache'
 import { verifyRoastsFeedRequest } from '@/lib/server-wallet-request'
 import { getSupabaseAdmin, isSupabaseConfigured } from '@/lib/supabase/admin'
 
@@ -111,5 +112,8 @@ export async function GET(request: NextRequest) {
     }
   })
 
-  return NextResponse.json({ roasts: enriched })
+  return NextResponse.json(
+    { roasts: enriched },
+    { headers: shortPublicCacheHeaders(10) },
+  )
 }

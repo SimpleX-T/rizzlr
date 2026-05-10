@@ -12,6 +12,7 @@ interface PersonaCardProps {
   isSelected: boolean;
   callState: PersonaCardCallState;
   onSelect: () => void;
+  onLockedPremium?: () => void;
   index: number;
 }
 
@@ -28,23 +29,31 @@ export function PersonaCard({
   isSelected,
   callState,
   onSelect,
+  onLockedPremium,
   index,
 }: PersonaCardProps) {
   const genderLabel = persona.gender === "female" ? "F" : "M";
   const stateLabel = callStateLabel[callState];
+  const lockedButPayable = !isUnlocked && Boolean(onLockedPremium);
+  const disabled = !isUnlocked && !lockedButPayable;
 
   return (
     <button
-      onClick={onSelect}
-      disabled={!isUnlocked}
+      onClick={() => {
+        if (isUnlocked) onSelect();
+        else if (lockedButPayable) onLockedPremium?.();
+      }}
+      disabled={disabled}
       className={cn(
         "relative w-full text-left transition-colors duration-200",
         "border-b border-[var(--border-soft)]",
-        isUnlocked
-          ? isSelected
-            ? "bg-[color-mix(in_oklch,var(--accent)_9%,transparent)]"
-            : "hover:bg-[color-mix(in_oklch,var(--surface)_62%,transparent)]"
-          : "opacity-30 cursor-not-allowed",
+        lockedButPayable
+          ? "opacity-100 cursor-pointer hover:bg-[color-mix(in_oklch,var(--surface)_62%,transparent)]"
+          : !isUnlocked
+            ? "opacity-30 cursor-not-allowed"
+            : isSelected
+              ? "bg-[color-mix(in_oklch,var(--accent)_9%,transparent)]"
+              : "hover:bg-[color-mix(in_oklch,var(--surface)_62%,transparent)]",
       )}
       style={{
         paddingTop: isSelected ? "20px" : "16px",
