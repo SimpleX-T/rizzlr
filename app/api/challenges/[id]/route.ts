@@ -51,6 +51,7 @@ export async function GET(
     challengerScore: row.challenger_score,
     wagerType: row.wager_type,
     wagerLamports: row.wager_lamports,
+    escrowState: row.escrow_state,
     status: expired && row.status === 'open' ? 'expired' : row.status,
     expiresAt: row.expires_at,
     winnerWallet: row.winner_wallet,

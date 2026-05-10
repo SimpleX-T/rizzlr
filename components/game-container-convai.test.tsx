@@ -181,6 +181,26 @@ describe('GameContainer ConvAI wiring', () => {
     expect(convai.setMuted).toHaveBeenCalledWith(false)
   })
 
+  it('onMessage user role adds voice transcript to session messages', async () => {
+    renderGame()
+    await waitForLobbyReady()
+    await act(async () => {
+      useGameStore.getState().selectPersona(FREE_PERSONAS[0])
+    })
+    fireEvent.click(callButton(/call zara/i))
+    await waitFor(() => expect(convai.lastStartOpts).not.toBeNull())
+    const onMessage = convai.lastStartOpts?.onMessage as
+      | ((p: { message: string; role: string }) => void)
+      | undefined
+    await act(async () => {
+      onMessage?.({ message: 'voice line here', role: 'user' })
+    })
+    const msgs = useGameStore.getState().session?.messages ?? []
+    expect(
+      msgs.some((m) => m.role === 'user' && m.content === 'voice line here'),
+    ).toBe(true)
+  })
+
   it('onMessage agent role updates live caption', async () => {
     renderGame()
     await waitForLobbyReady()

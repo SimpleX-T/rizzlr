@@ -207,6 +207,7 @@ export async function POST(request: NextRequest) {
   const base = {
     challengeId,
     blinkUrl: `${origin}/api/actions/challenge/${challengeId}`,
+    inviteUrl: `${origin}/challenge/${challengeId}`,
     appUrl: `${origin}/?challenge=${challengeId}`,
   };
 

@@ -252,6 +252,8 @@ function randomHexSeed(byteLength = 32): string {
 export type ChallengeCreatedResponse = {
   challengeId: string;
   blinkUrl: string;
+  /** Browser invite page — wallet connect + accept wager without a Blink client */
+  inviteUrl: string;
   appUrl: string;
   creatorDepositTransaction?: string;
   error?: string;

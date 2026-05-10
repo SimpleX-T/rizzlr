@@ -86,6 +86,38 @@ export function ChallengeShareModal({
               className="text-[10px] uppercase tracking-widest"
               style={{ color: 'var(--faint)', fontFamily: 'var(--font-body)' }}
             >
+              Invite page (browser)
+            </span>
+            <div className="flex gap-2 mt-1">
+              <input
+                readOnly
+                value={data.inviteUrl}
+                className="flex-1 rounded-lg px-3 py-2 text-xs truncate"
+                style={{
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border-soft)',
+                  color: 'var(--text)',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => void copy(data.inviteUrl)}
+                className="shrink-0 px-3 py-2 rounded-lg text-xs uppercase tracking-wider"
+                style={{
+                  background: 'var(--accent)',
+                  color: 'var(--text)',
+                  fontFamily: 'var(--font-body)',
+                }}
+              >
+                copy
+              </button>
+            </div>
+          </div>
+          <div>
+            <span
+              className="text-[10px] uppercase tracking-widest"
+              style={{ color: 'var(--faint)', fontFamily: 'var(--font-body)' }}
+            >
               Blink (Solana Action)
             </span>
             <div className="flex gap-2 mt-1">

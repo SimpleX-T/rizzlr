@@ -361,11 +361,16 @@ export function GameContainer() {
               reject(new Error(message))
             },
             onMessage: ({ message, role }) => {
-              if (role !== 'agent' || !message?.trim()) return
+              if (!message?.trim()) return
+              const text = message.trim()
+              // Voice ASR: ConvAI emits user transcripts here (same callback as agent lines).
+              if (role === 'user') {
+                useGameStore.getState().addMessage({ role: 'user', content: text })
+                return
+              }
+              if (role !== 'agent') return
               if (assistantDraftRef.current.trim()) return
-              useGameStore
-                .getState()
-                .addMessage({ role: 'assistant', content: message.trim() })
+              useGameStore.getState().addMessage({ role: 'assistant', content: text })
             },
             onAgentChatResponsePart: (part) => {
               if (part.type === 'start') {
